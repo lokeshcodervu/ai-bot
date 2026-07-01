@@ -1,0 +1,36 @@
+# Ignore python compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Ignore local databases and SQLite files
+*.db
+*.db.bak
+*.sqlite3
+
+# Ignore environment variables / local configurations
+.env
+.env.example
+
+# Ignore virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Ignore testing caches
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Ignore IDE files
+.vscode/
+.idea/
+
+# Ignore git metadata
+.git
+.gitignore
+
+# Ignore local upload folders
+uploads/
