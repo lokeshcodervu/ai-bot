@@ -1,0 +1,31 @@
+{
+  "name": "calculate_premium",
+  "description": "Estimate monthly premium for term life, health, or retirement insurance policies.",
+  "json_schema": {
+    "type": "object",
+    "properties": {
+      "age": {
+        "type": "integer",
+        "description": "The age of the applicant (e.g., 30)."
+      },
+      "policy_type": {
+        "type": "string",
+        "enum": [
+          "term",
+          "health",
+          "retirement"
+        ],
+        "description": "The type of insurance policy."
+      },
+      "coverage_amount": {
+        "type": "number",
+        "description": "The coverage amount in USD (e.g. 500000)."
+      }
+    },
+    "required": [
+      "age",
+      "policy_type",
+      "coverage_amount"
+    ]
+  }
+}

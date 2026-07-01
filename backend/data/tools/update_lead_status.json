@@ -1,0 +1,25 @@
+{
+  "name": "update_lead_status",
+  "description": "Update the pipeline/CRM status of the active lead.",
+  "json_schema": {
+    "type": "object",
+    "properties": {
+      "status": {
+        "type": "string",
+        "enum": [
+          "Imported",
+          "Pending Queue",
+          "Ready To Call",
+          "Connected",
+          "Converted",
+          "Needs Follow-up",
+          "Not Interested"
+        ],
+        "description": "The new status of the lead."
+      }
+    },
+    "required": [
+      "status"
+    ]
+  }
+}

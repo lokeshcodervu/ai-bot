@@ -1,0 +1,16 @@
+{
+  "name": "check_seat_availability",
+  "description": "Check if there are seats available in a specific course or batch.",
+  "json_schema": {
+    "type": "object",
+    "properties": {
+      "course": {
+        "type": "string",
+        "description": "The course name (e.g., Python, React, Full-stack)."
+      }
+    },
+    "required": [
+      "course"
+    ]
+  }
+}

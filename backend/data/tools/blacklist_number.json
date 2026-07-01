@@ -1,0 +1,20 @@
+{
+  "name": "blacklist_number",
+  "description": "Blacklist the current user phone number from calling lists (opt-out / Do Not Call request).",
+  "json_schema": {
+    "type": "object",
+    "properties": {
+      "phone": {
+        "type": "string",
+        "description": "The phone number to blacklist."
+      },
+      "reason": {
+        "type": "string",
+        "description": "The reason for blacklisting."
+      }
+    },
+    "required": [
+      "phone"
+    ]
+  }
+}

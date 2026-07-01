@@ -1,0 +1,16 @@
+fastapi
+uvicorn[standard]
+pydantic>=2.0
+pydantic-settings
+python-dotenv
+sqlalchemy
+pyjwt
+bcrypt
+python-multipart
+email-validator
+pinecone
+openai
+pypdf
+google-generativeai
+redis
+twilio

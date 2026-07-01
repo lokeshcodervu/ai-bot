@@ -1,0 +1,16 @@
+{
+  "name": "search_knowledge",
+  "description": "Query the vector search knowledge base for specific information, syllabi, fee structure, or FAQs.",
+  "json_schema": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "The detailed query search term."
+      }
+    },
+    "required": [
+      "query"
+    ]
+  }
+}

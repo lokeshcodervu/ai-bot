@@ -1,0 +1,21 @@
+{
+  "name": "book_callback",
+  "description": "Schedule a callback or appointment with a senior insurance advisor for the lead.",
+  "json_schema": {
+    "type": "object",
+    "properties": {
+      "date": {
+        "type": "string",
+        "description": "The date of the callback in YYYY-MM-DD format."
+      },
+      "time": {
+        "type": "string",
+        "description": "The time of the callback (e.g. 10:00 AM)."
+      }
+    },
+    "required": [
+      "date",
+      "time"
+    ]
+  }
+}

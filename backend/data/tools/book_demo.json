@@ -1,0 +1,21 @@
+{
+  "name": "book_demo",
+  "description": "Book a free demo session or site visit for the lead.",
+  "json_schema": {
+    "type": "object",
+    "properties": {
+      "date": {
+        "type": "string",
+        "description": "The date of the booking in YYYY-MM-DD format."
+      },
+      "time": {
+        "type": "string",
+        "description": "The time of the booking (e.g. 10:00 AM)."
+      }
+    },
+    "required": [
+      "date",
+      "time"
+    ]
+  }
+}
