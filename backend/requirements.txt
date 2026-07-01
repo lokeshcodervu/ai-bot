@@ -14,3 +14,4 @@ pypdf
 google-generativeai
 redis
 twilio
+psycopg2-binary
