@@ -488,27 +488,14 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
             print("[TELEPHONY] Integrations connected successfully. Ready to stream.")
 
             # Trigger dynamic welcome greeting based on prompt persona and chosen language
-            if selected_language == "auto":
-                if "Rohan" in system_prompt:
-                    greeting = "Hello! SecureLife Insurance me call karne ke liye dhanyawad. I am Rohan from SecureLife Insurance. How can I help you today, ya main aaj aapki kya sahayata kar sakta hoon?"
-                elif "Neha" in system_prompt:
-                    greeting = "Hello! SecureLife Insurance me call karne ke liye dhanyawad. I am Neha from SecureLife Insurance. How can I help you today, ya main aaj aapki kya sahayata kar sakti hoon?"
-                else:
-                    greeting = "Hello! Call karne ke liye dhanyawad. How can I help you today, ya main aaj aapki kya sahayata kar sakta hoon?"
-            elif selected_language == "hindi":
-                if "Rohan" in system_prompt:
-                    greeting = "Namaste! SecureLife Insurance me call karne ke liye dhanyawad. Main Rohan baat kar raha hoon. Aaj main aapki kya sahayata kar sakta hoon?"
-                elif "Neha" in system_prompt:
-                    greeting = "Namaste! SecureLife Insurance me call karne ke liye dhanyawad. Main Neha baat kar rahi hoon. Aaj main aapki kya sahayata kar sakti hoon?"
-                else:
-                    greeting = "Namaste! Call karne ke liye dhanyawad. Aaj main aapki kya sahayata kar sakta hoon?"
+            user_name = lead.name if lead else "there"
+            company_name = tenant.company_name if (tenant and tenant.company_name) else "SecureLife Insurance"
+            agent_name = "Rohan" if "Rohan" in system_prompt else ("Neha" if "Neha" in system_prompt else "AI")
+
+            if selected_language == "auto" or selected_language == "hindi":
+                greeting = f"Hello, namaste! Kya main {user_name} se baat kar raha hoon? Main {agent_name} bol raha hoon, {company_name} se. Main aapko disturb toh nahi kar raha? 30 seconds ka time milega? Aapke liye ek insurance plan ke baare me short information share karni thi jo aapke liye useful ho sakti hai."
             else:
-                if "Rohan" in system_prompt:
-                    greeting = "Hello! Thank you for calling. I am Rohan from SecureLife Insurance. How can I help you today?"
-                elif "Neha" in system_prompt:
-                    greeting = "Hello! Thank you for calling. I am Neha from SecureLife Insurance. How can I help you today?"
-                else:
-                    greeting = "Hello! Thank you for calling. How can I help you today?"
+                greeting = f"Hello! Am I speaking with {user_name}? I am {agent_name} from {company_name}. Hope I am not disturbing you. Do you have 30 seconds? I wanted to share some quick information about an insurance plan that could be useful for you."
                 
             print(f"[TELEPHONY] Sending initial greeting: {greeting}")
             tts_task = asyncio.create_task(render_tts_and_send_to_twilio(greeting, voice_id, twilio_ws, stream_sid))
