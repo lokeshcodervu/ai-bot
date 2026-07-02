@@ -37,7 +37,7 @@ from app.config.settings import settings
 # Load API keys from environment
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY") or os.getenv("OPENAI_API_KEY") # fallback to openai key if same provider or debug
-ELEVENLABS_API_KEY = os.getenv("elevenlabs")
+ELEVENLABS_API_KEY = os.getenv("elevenlabs") or os.getenv("ELEVENLABS_API_KEY")
 
 async def search_knowledge_base(query: str, tenant_id: str) -> str:
     """
