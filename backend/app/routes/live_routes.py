@@ -100,7 +100,7 @@ async def campaign_ws_endpoint(
 @router.websocket("/campaigns/{campaign_id}/leads/{lead_id}/transcript/ws")
 async def transcript_ws_endpoint(
     websocket: WebSocket,
-    campaign_id: UUID,
+    campaign_id: str,
     lead_id: UUID,
     token: str = Query(...),
     db: Session = Depends(get_db)
@@ -125,17 +125,31 @@ async def transcript_ws_endpoint(
 
     # 2. Check lead validity and association with campaign
     from app.models.lead import Lead
-    lead = db.query(Lead).filter(
-        Lead.id == lead_id, 
-        Lead.tenant_id == user.tenant_id, 
-        Lead.campaign_id == campaign_id
-    ).first()
+    if campaign_id == "single-call":
+        lead = db.query(Lead).filter(
+            Lead.id == lead_id, 
+            Lead.tenant_id == user.tenant_id
+        ).first()
+    else:
+        try:
+            campaign_uuid = UUID(campaign_id)
+        except ValueError:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid campaign ID format.")
+            return
+
+        lead = db.query(Lead).filter(
+            Lead.id == lead_id, 
+            Lead.tenant_id == user.tenant_id, 
+            Lead.campaign_id == campaign_uuid
+        ).first()
+
     if not lead:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Lead not found or access denied.")
         return
 
     # 3. Subscribe to transcript stream channel
     channel_name = f"campaign:{campaign_id}:lead:{lead_id}"
+
     subscription = await pubsub_broker.subscribe(channel_name)
     
     async def client_reader():
