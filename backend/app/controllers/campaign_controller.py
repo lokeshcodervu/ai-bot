@@ -265,7 +265,8 @@ def process_campaign_dialing(db_session_factory, tenant_id: UUID, campaign_id: U
                     call = twilio_client.calls.create(
                         to=lead.phone,
                         from_=tenant.twilio_phone_number,
-                        url=twiml_url
+                        url=twiml_url,
+                        record=True
                     )
                     print(f"[DIALER WORKER] Twilio call initiated successfully. Call SID: {call.sid}")
                     

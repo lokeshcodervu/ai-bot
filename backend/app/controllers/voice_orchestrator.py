@@ -396,6 +396,7 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
     Main orchestrator handling Twilio audio stream WebSocket connections.
     """
     stream_sid = None
+    call_sid = None
     campaign_id = None
     lead_id = None
     tenant_id = None
@@ -412,11 +413,12 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
             
             if event_type == "start":
                 stream_sid = packet["streamSid"]
+                call_sid = packet["start"].get("callSid")
                 custom_params = packet["start"].get("customParameters", {})
                 campaign_id = custom_params.get("campaign_id")
                 lead_id = custom_params.get("lead_id")
                 selected_language = custom_params.get("language", "english")
-                print(f"[TELEPHONY] Call started. StreamSid={stream_sid}, campaign={campaign_id}, lead={lead_id}, language={selected_language}")
+                print(f"[TELEPHONY] Call started. StreamSid={stream_sid}, CallSid={call_sid}, campaign={campaign_id}, lead={lead_id}, language={selected_language}")
                 break
     except Exception as e:
         print(f"[TELEPHONY ERROR] Handshake read failed: {str(e)}")
@@ -583,7 +585,7 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
         print(f"[TELEPHONY ORCHESTRATOR ERROR] Error in WS media loops: {str(e)}")
     finally:
         # Save Call Logs to database on completion
-        await save_telephony_call_log(db_session_factory, tenant_id, campaign_id, lead_id, conversation_history)
+        await save_telephony_call_log(db_session_factory, tenant_id, campaign_id, lead_id, conversation_history, call_sid)
 
 async def render_tts_and_send_to_twilio(text: str, voice_id: str, twilio_ws: WebSocket, stream_sid: str):
     """
@@ -647,7 +649,8 @@ async def save_telephony_call_log(
     tenant_id: str,
     campaign_id: str,
     lead_id: str,
-    conversation_history: List[Dict[str, str]]
+    conversation_history: List[Dict[str, str]],
+    call_sid: str = None
 ):
     """
     Create a call log with the final dialog history summary.
@@ -671,13 +674,41 @@ async def save_telephony_call_log(
         if is_converted:
             summary = "Admissions call completed. Booked python syllabus site visit."
             
+        # Fetch tenant Twilio settings to query Twilio recording
+        tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+        effective_sid = tenant.twilio_account_sid if tenant else None
+        effective_token = tenant.twilio_auth_token if tenant else None
+        
+        if not effective_sid:
+            from app.config.settings import settings
+            effective_sid = settings.TWILIO_ACCOUNT_SID
+            effective_token = settings.TWILIO_AUTH_TOKEN
+
+        recording_url = f"https://s3.amazonaws.com/ai-bot-recordings/call_{lead_id}.mp3" # default fallback
+        
+        if call_sid and effective_sid and effective_token:
+            try:
+                # Query Twilio for the recording of this Call SID
+                # Give it a small sleep of 1.5 seconds so Twilio completes recording transition
+                import time
+                time.sleep(1.5)
+                from twilio.rest import Client
+                twilio_client = Client(effective_sid, effective_token)
+                recordings = twilio_client.recordings.list(call_sid=call_sid)
+                if recordings:
+                    rec = recordings[0]
+                    recording_url = f"https://api.twilio.com/2010-04-01/Accounts/{effective_sid}/Recordings/{rec.sid}.mp3"
+                    print(f"[TELEPHONY] Found Twilio recording: {recording_url}")
+            except Exception as e:
+                print(f"[TELEPHONY ERROR] Failed to fetch Twilio recording: {str(e)}")
+
         db_log = CallLog(
             tenant_id=tenant_id,
             lead_id=lead_id,
             campaign_id=None if campaign_id == "single-call" else campaign_id,
             call_duration=len(conversation_history) * 6, # approximate duration
             call_disposition="Answered",
-            recording_url=f"https://s3.amazonaws.com/ai-bot-recordings/call_{lead_id}.mp3",
+            recording_url=recording_url,
             ai_summary=summary,
             intent_tag="Warm Lead" if is_converted else "Cold Call",
             transcript=transcript_data

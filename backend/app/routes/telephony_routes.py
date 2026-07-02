@@ -137,7 +137,8 @@ def call_single_lead(
             call = twilio_client.calls.create(
                 to=lead.phone,
                 from_=effective_phone,
-                url=twiml_url
+                url=twiml_url,
+                record=True
             )
             lead.status = LeadStatus.CONNECTED
             db.commit()
