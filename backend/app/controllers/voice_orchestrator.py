@@ -543,6 +543,7 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
             system_prompt += "\n\n[LANGUAGE RULE]: Conversational Language: English. You must speak in clear English. Answer queries in English only."
 
         voice_id = tenant.voice_id if (tenant and tenant.voice_id) else "cgSgspJ2msm6clMCkdW9" # Jessica default
+        tts_provider = tenant.settings.get("tts_provider", "ELEVENLABS") if (tenant and tenant.settings and isinstance(tenant.settings, dict)) else "ELEVENLABS"
     finally:
         db.close()
 
@@ -576,7 +577,7 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
                 greeting = f"Hello! Am I speaking with {user_name}? I am {agent_name} from {company_name}. Hope I am not disturbing you. Do you have 30 seconds? I wanted to share some quick information about an insurance plan that could be useful for you."
                 
             print(f"[TELEPHONY] Sending initial greeting: {greeting}")
-            tts_task = asyncio.create_task(render_tts_and_send_to_twilio(greeting, voice_id, twilio_ws, stream_sid))
+            tts_task = asyncio.create_task(render_tts_and_send_to_twilio(greeting, voice_id, twilio_ws, stream_sid, tts_provider))
             active_tts_tasks.append(tts_task)
             conversation_history.append({"role": "assistant", "content": greeting})
             
@@ -645,7 +646,7 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
                             })
                             
                             # Dispatch ElevenLabs TTS rendering tasks in background
-                            tts_task = asyncio.create_task(render_tts_and_send_to_twilio(reply, voice_id, twilio_ws, stream_sid))
+                            tts_task = asyncio.create_task(render_tts_and_send_to_twilio(reply, voice_id, twilio_ws, stream_sid, tts_provider))
                             active_tts_tasks.append(tts_task)
                             
                 except Exception as e:
@@ -663,15 +664,76 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
         # Save Call Logs to database on completion
         await save_telephony_call_log(db_session_factory, tenant_id, campaign_id, lead_id, conversation_history, call_sid)
 
-async def render_tts_and_send_to_twilio(text: str, voice_id: str, twilio_ws: WebSocket, stream_sid: str):
+async def render_sarvam_tts_and_send_to_twilio(text: str, twilio_ws: WebSocket, stream_sid: str):
     """
-    Pipes text segments to ElevenLabs, reads returned Mu-law audio, 
+    Renders text to speech using Sarvam AI REST API,
     and sends Base64 media packets to Twilio call socket.
     """
+    import httpx
+    
+    sarvam_key = os.getenv("SARVAM_AI_KEY")
+    if not sarvam_key:
+        print("[SARVAM TTS ERROR] SARVAM_AI_KEY is missing from environment.")
+        return
+        
+    url = "https://api.sarvam.ai/text-to-speech"
+    headers = {
+        "api-subscription-key": sarvam_key,
+        "Content-Type": "application/json"
+    }
+    
+    has_hindi = any('\u0900' <= char <= '\u097f' for char in text)
+    lang_code = "hi-IN" if has_hindi else "en-IN"
+    speaker = "aditya"
+    
+    payload = {
+        "text": text,
+        "speaker": speaker,
+        "model": "bulbul:v3",
+        "target_language_code": lang_code,
+        "speech_sample_rate": 8000,
+        "output_audio_codec": "mulaw"
+    }
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, headers=headers, json=payload, timeout=10.0)
+            if response.status_code == 200:
+                data = response.json()
+                audios = data.get("audios", [])
+                if audios:
+                    audio_base64 = audios[0]
+                    media_payload = {
+                        "event": "media",
+                        "streamSid": stream_sid,
+                        "media": {
+                            "payload": audio_base64
+                        }
+                    }
+                    await twilio_ws.send_json(media_payload)
+            else:
+                print(f"[SARVAM TTS ERROR] API returned status {response.status_code}: {response.text}")
+    except asyncio.CancelledError:
+        print("[TTS CANCELLED] Sarvam rendering task cancelled due to barge-in.")
+    except Exception as e:
+        print(f"[SARVAM TTS ERROR] Exception in Sarvam rendering: {str(e)}")
+
+async def render_tts_and_send_to_twilio(text: str, voice_id: str, twilio_ws: WebSocket, stream_sid: str, tts_provider: str = "ELEVENLABS"):
+    """
+    Pipes text segments to ElevenLabs or Sarvam AI, reads returned Mu-law audio, 
+    and sends Base64 media packets to Twilio call socket.
+    """
+    elevenlabs_key = os.getenv("elevenlabs") or os.getenv("ELEVENLABS_API_KEY")
+    sarvam_key = os.getenv("SARVAM_AI_KEY")
+
+    if (tts_provider == "SARVAM" or (not elevenlabs_key and sarvam_key)) and sarvam_key:
+        await render_sarvam_tts_and_send_to_twilio(text, twilio_ws, stream_sid)
+        return
+
     import websockets
     
     el_url = f"wss://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream-input?output_format=ulaw_8000"
-    el_headers = {"xi-api-key": ELEVENLABS_API_KEY}
+    el_headers = {"xi-api-key": elevenlabs_key or ""}
     
     try:
         async with websockets.connect(el_url, additional_headers=el_headers) as el_ws:
@@ -680,7 +742,7 @@ async def render_tts_and_send_to_twilio(text: str, voice_id: str, twilio_ws: Web
                 "text": " ",
                 "model_id": "eleven_multilingual_v2",
                 "voice_settings": {"stability": 0.5, "similarity_boost": 0.8},
-                "xi_api_key": ELEVENLABS_API_KEY
+                "xi_api_key": elevenlabs_key or ""
             }))
             
             # Send text to ElevenLabs

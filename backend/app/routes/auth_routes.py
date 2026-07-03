@@ -265,7 +265,8 @@ def read_dashboard(
         "user": {
             "username": current_user.username,
             "email": current_user.email,
-            "role": current_user.role
+            "role": current_user.role,
+            "full_name": current_user.full_name
         },
         "tenant": {
             "company_name": current_user.tenant.company_name,

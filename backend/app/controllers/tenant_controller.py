@@ -66,7 +66,10 @@ def update_tenant(db: Session, db_tenant: Tenant, tenant_in: TenantUpdate):
     if "website" in update_data and update_data["website"] is not None:
         update_data["website"] = str(update_data["website"])
     for key, value in update_data.items():
-        setattr(db_tenant, key, value)
+        if key == "settings" and isinstance(value, dict) and isinstance(db_tenant.settings, dict):
+            db_tenant.settings = {**db_tenant.settings, **value}
+        else:
+            setattr(db_tenant, key, value)
     db.commit()
     db.refresh(db_tenant)
     return db_tenant
