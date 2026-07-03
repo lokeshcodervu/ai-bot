@@ -3,6 +3,7 @@
 import os
 import sys
 import json
+import re
 import base64
 import asyncio
 from typing import Dict, Any, List
@@ -391,6 +392,81 @@ async def query_gpt4o_dialogue(
             
     return "I am sorry, I am having trouble connecting right now.", False
 
+def is_valid_name(name: str) -> bool:
+    if not name:
+        return False
+    # Avoid long sentences / multi-word descriptions
+    words = name.split()
+    if len(words) > 2:
+        return False
+    # Avoid generic/stop words
+    stopwords = {
+        "a", "an", "the", "helpful", "professional", "assistant", "advisor", "bot", 
+        "representative", "sales", "support", "agent", "virtual", "ai", "speaking", 
+        "calling", "sure", "here", "there", "someone", "somebody", "admissions",
+        "real", "estate", "healthcare", "finance", "ecommerce", "insurance", "services"
+    }
+    for word in words:
+        if word.lower() in stopwords:
+            return False
+    return True
+
+def extract_agent_name(system_prompt: str) -> str:
+    if not system_prompt:
+        return "AI"
+        
+    prompt = system_prompt.strip()
+    
+    # 1. Check for brackets, e.g. "I am [suresh]", "You are [Neha]", "Your name is [Rohan]"
+    bracket_match = re.search(r'(?:I am|You are|Your name is|myself|this is|my name is)\s+\[([A-Za-z0-9_ -]+)\]', prompt, re.IGNORECASE)
+    if bracket_match:
+        name = bracket_match.group(1).strip()
+        if is_valid_name(name):
+            return name.title()
+
+    # 2. Look for "I am <Name> from" or "this is <Name> from" (case-insensitive)
+    from_match = re.search(r'(?:I am|this is|myself is|here is)\s+([A-Za-z0-9_ -]+?)\s+(?:from|representing|calling|with)', prompt, re.IGNORECASE)
+    if from_match:
+        name = from_match.group(1).strip()
+        if is_valid_name(name):
+            return name.title()
+
+    # 3. Look for "You are <Name>," or "You are <Name>." (usually followed by comma/period)
+    you_are_match = re.search(r'You are\s+([A-Za-z0-9_ -]+?)[,.]', prompt, re.IGNORECASE)
+    if you_are_match:
+        name = you_are_match.group(1).strip()
+        if is_valid_name(name):
+            return name.title()
+
+    # 4. Look for "Your name is <Name>." or "Your name is <Name>," or "My name is <Name>"
+    your_name_match = re.search(r'(?:Your name is|My name is)\s+([A-Za-z0-9_ -]+?)[,.]', prompt, re.IGNORECASE)
+    if your_name_match:
+        name = your_name_match.group(1).strip()
+        if is_valid_name(name):
+            return name.title()
+
+    # 5. Look for "I am <Name>." or "I am <Name>," (end of sentence or clause)
+    i_am_match = re.search(r'I am\s+([A-Za-z0-9_ -]+?)[,.]', prompt, re.IGNORECASE)
+    if i_am_match:
+        name = i_am_match.group(1).strip()
+        if is_valid_name(name):
+            return name.title()
+
+    # 6. Check if there's any valid name inside brackets like "[suresh]" or "[Suresh]" anywhere in the prompt
+    for bracket_any in re.finditer(r'\[([A-Za-z0-9_ -]+)\]', prompt):
+        name = bracket_any.group(1).strip()
+        # Ensure it's not a generic placeholder
+        if name.lower() not in ["user name", "company name", "phone", "email", "lead name", "date", "time"] and is_valid_name(name):
+            return name.title()
+
+    # Fallback checks (existing behavior)
+    if "Rohan" in system_prompt:
+        return "Rohan"
+    elif "Neha" in system_prompt:
+        return "Neha"
+        
+    return "AI"
+
 async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
     """
     Main orchestrator handling Twilio audio stream WebSocket connections.
@@ -492,7 +568,7 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
             # Trigger dynamic welcome greeting based on prompt persona and chosen language
             user_name = lead.name if lead else "there"
             company_name = tenant.company_name if (tenant and tenant.company_name) else "SecureLife Insurance"
-            agent_name = "Rohan" if "Rohan" in system_prompt else ("Neha" if "Neha" in system_prompt else "AI")
+            agent_name = extract_agent_name(system_prompt)
 
             if selected_language == "auto" or selected_language == "hindi":
                 greeting = f"Hello, namaste! Kya main {user_name} se baat kar raha hoon? Main {agent_name} bol raha hoon, {company_name} se. Main aapko disturb toh nahi kar raha? 30 seconds ka time milega? Aapke liye ek insurance plan ke baare me short information share karni thi jo aapke liye useful ho sakti hai."
