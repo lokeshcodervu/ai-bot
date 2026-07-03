@@ -664,7 +664,7 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
         # Save Call Logs to database on completion
         await save_telephony_call_log(db_session_factory, tenant_id, campaign_id, lead_id, conversation_history, call_sid)
 
-async def render_sarvam_tts_and_send_to_twilio(text: str, twilio_ws: WebSocket, stream_sid: str):
+async def render_sarvam_tts_and_send_to_twilio(text: str, voice_id: str, twilio_ws: WebSocket, stream_sid: str):
     """
     Renders text to speech using Sarvam AI REST API,
     and sends Base64 media packets to Twilio call socket.
@@ -684,8 +684,11 @@ async def render_sarvam_tts_and_send_to_twilio(text: str, twilio_ws: WebSocket, 
     
     has_hindi = any('\u0900' <= char <= '\u097f' for char in text)
     lang_code = "hi-IN" if has_hindi else "en-IN"
-    speaker = "aditya"
     
+    # Map selected voice_id to a valid Sarvam speaker (or default to aditya)
+    speaker = voice_id if voice_id in ["aditya", "saranya", "arvind", "geeta", "lokesh", "nisha"] else "aditya"
+    print(f"[SARVAM AI] Rendering TTS: speaker={speaker}, language={lang_code}, text={text[:50]}...")
+
     payload = {
         "text": text,
         "speaker": speaker,
@@ -726,8 +729,10 @@ async def render_tts_and_send_to_twilio(text: str, voice_id: str, twilio_ws: Web
     elevenlabs_key = os.getenv("elevenlabs") or os.getenv("ELEVENLABS_API_KEY")
     sarvam_key = os.getenv("SARVAM_AI_KEY")
 
+    print(f"[TTS CONFIG] active_provider={tts_provider}, selected_voice={voice_id}")
+
     if (tts_provider == "SARVAM" or (not elevenlabs_key and sarvam_key)) and sarvam_key:
-        await render_sarvam_tts_and_send_to_twilio(text, twilio_ws, stream_sid)
+        await render_sarvam_tts_and_send_to_twilio(text, voice_id, twilio_ws, stream_sid)
         return
 
     import websockets

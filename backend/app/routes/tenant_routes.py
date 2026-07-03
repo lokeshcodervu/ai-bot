@@ -126,14 +126,27 @@ def update_tenant_profile_put(
 
 @router.get("/voices", response_model=List[VoiceOut])
 def get_voices(
-    current_user: User = Depends(auth_controller.get_current_user)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(current_user_dep := auth_controller.get_current_user)
 ):
-    """Retrieve details of premium AI voice models available from ElevenLabs."""
+    """Retrieve details of premium AI voice models available from ElevenLabs or Sarvam AI."""
     if not current_user.tenant_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="User is not associated with any tenant."
         )
+        
+    db_tenant = tenant_controller.get_tenant_by_id(db, current_user.tenant_id)
+    if db_tenant and db_tenant.settings and isinstance(db_tenant.settings, dict) and db_tenant.settings.get("tts_provider") == "SARVAM":
+        return [
+            {"voice_id": "aditya", "name": "Aditya (Male)", "gender": "male", "preview_url": ""},
+            {"voice_id": "saranya", "name": "Saranya (Female)", "gender": "female", "preview_url": ""},
+            {"voice_id": "arvind", "name": "Arvind (Male)", "gender": "male", "preview_url": ""},
+            {"voice_id": "geeta", "name": "Geeta (Female)", "gender": "female", "preview_url": ""},
+            {"voice_id": "lokesh", "name": "Lokesh (Male)", "gender": "male", "preview_url": ""},
+            {"voice_id": "nisha", "name": "Nisha (Female)", "gender": "female", "preview_url": ""}
+        ]
+
     return fetch_elevenlabs_voices()
 
 @router.post("/select-voice", response_model=TenantOut)
