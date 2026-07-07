@@ -6,12 +6,134 @@ import json
 import re
 import base64
 import asyncio
+import time
 from typing import Dict, Any, List
 from fastapi import WebSocket
 from sqlalchemy.orm import sessionmaker
 import websockets
 import openai
 import pinecone
+
+class CallTurnLatencyTracker:
+    def __init__(self):
+        self.stt_finalized_time = 0.0
+        self.llm_start_time = 0.0
+        self.first_token_time = 0.0
+        self.first_audio_time = 0.0
+        self.logged_this_turn = True
+        
+    def start_turn(self):
+        self.stt_finalized_time = time.perf_counter()
+        self.llm_start_time = time.perf_counter()
+        self.first_token_time = 0.0
+        self.first_audio_time = 0.0
+        self.logged_this_turn = False
+        
+    def record_first_token(self):
+        if self.first_token_time == 0.0:
+            self.first_token_time = time.perf_counter()
+            
+    def record_first_audio(self):
+        if not self.logged_this_turn and self.first_audio_time == 0.0:
+            self.first_audio_time = time.perf_counter()
+            total_latency = (self.first_audio_time - self.stt_finalized_time) * 1000
+            llm_ttft = (self.first_token_time - self.llm_start_time) * 1000 if self.first_token_time > 0.0 else 0.0
+            tts_latency = (self.first_audio_time - self.first_token_time) * 1000 if self.first_token_time > 0.0 else 0.0
+            
+            print(f"\n=======================================================")
+            print(f"[LATENCY DIAGNOSTICS REPORT]")
+            print(f"  - LLM TTFT (Time-to-First-Token) : {llm_ttft:.2f}ms")
+            print(f"  - TTS Generation (TTFT to Audio)  : {tts_latency:.2f}ms")
+            print(f"  - Total Pipeline Start Latency    : {total_latency:.2f}ms")
+            print(f"=======================================================\n")
+            sys.stdout.flush()
+            self.logged_this_turn = True
+
+class PersistentElevenLabsTTS:
+    def __init__(self, voice_id: str, elevenlabs_key: str, latency_tracker: CallTurnLatencyTracker = None):
+        self.voice_id = voice_id
+        self.elevenlabs_key = elevenlabs_key
+        self.latency_tracker = latency_tracker
+        self.el_ws = None
+        self.current_stream_sid = None
+        self.twilio_ws = None
+        self.is_connected = False
+        self.connect_task = None
+        self._lock = asyncio.Lock()
+
+    async def connect(self):
+        async with self._lock:
+            if self.is_connected and self.el_ws:
+                return
+            el_url = f"wss://api.elevenlabs.io/v1/text-to-speech/{self.voice_id}/stream-input?output_format=ulaw_8000"
+            el_headers = {"xi-api-key": self.elevenlabs_key or ""}
+            try:
+                self.el_ws = await websockets.connect(el_url, additional_headers=el_headers)
+                await self.el_ws.send(json.dumps({
+                    "text": " ",
+                    "model_id": "eleven_multilingual_v2",
+                    "voice_settings": {"stability": 0.4, "similarity_boost": 0.6, "style": 0.7},
+                    "xi_api_key": self.elevenlabs_key or ""
+                }))
+                self.is_connected = True
+                print("[PERSISTENT TTS] ElevenLabs WebSocket connected successfully.")
+                sys.stdout.flush()
+            except Exception as e:
+                print(f"[PERSISTENT TTS ERROR] Connection failed: {e}")
+                sys.stdout.flush()
+                self.is_connected = False
+                self.el_ws = None
+
+    async def close(self):
+        async with self._lock:
+            if self.el_ws:
+                try:
+                    await self.el_ws.send(json.dumps({"text": ""}))
+                    await self.el_ws.close()
+                except Exception:
+                    pass
+            self.is_connected = False
+            self.el_ws = None
+
+    async def flush(self):
+        print("[PERSISTENT TTS] Flushing ElevenLabs session due to user interruption...")
+        sys.stdout.flush()
+        await self.close()
+        # Trigger background reconnection
+        self.connect_task = asyncio.create_task(self.connect())
+
+    async def listen_loop(self, twilio_ws: WebSocket, stream_sid: str):
+        self.twilio_ws = twilio_ws
+        self.current_stream_sid = stream_sid
+        while True:
+            try:
+                # If we're disconnected or not initialized, wait briefly
+                if not self.is_connected or not self.el_ws:
+                    await asyncio.sleep(0.05)
+                    continue
+                
+                async for response in self.el_ws:
+                    data = json.loads(response)
+                    audio_base64 = data.get("audio")
+                    if audio_base64:
+                        if self.latency_tracker:
+                            self.latency_tracker.record_first_audio()
+                        media_payload = {
+                            "event": "media",
+                            "streamSid": self.current_stream_sid,
+                            "media": {
+                                "payload": audio_base64
+                            }
+                        }
+                        await self.twilio_ws.send_json(media_payload)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"[PERSISTENT TTS LISTEN LOOP ERROR/CLOSE]: {e}")
+                sys.stdout.flush()
+                self.is_connected = False
+                self.el_ws = None
+                await asyncio.sleep(0.1)
 
 # Reconfigure stdout/stderr to support Unicode characters in Windows consoles
 if hasattr(sys.stdout, "reconfigure"):
@@ -250,6 +372,231 @@ async def execute_tool(
             db.close()
         except Exception:
             pass
+
+async def query_gpt4o_dialogue_stream(
+    user_text: str,
+    conversation_history: List[Dict[str, str]],
+    system_prompt: str,
+    tenant_id: str,
+    lead_id: str,
+    db_session_factory,
+    cached_openai_tools: list,
+    cached_gemini_tools: list,
+    latency_tracker: CallTurnLatencyTracker = None
+):
+    """
+    Query Gemini or GPT-4o dialogue agent and stream back response chunks.
+    Uses cached tools schemas and eliminates db requests.
+    """
+    question_keywords = [
+        "syllabus", "fee", "price", "cost", "course", "admission", "duration", 
+        "class", "react", "python", "insurance", "plan", "premium", "policy",
+        "bima", "jeevan", "kya", "hota", "insuranse", "bheema", "fayde", 
+        "benefits", "tax", "claim", "offline", "online", "difference", "what"
+    ]
+    is_question = any(word in user_text.lower() for word in question_keywords)
+    
+    rag_context = ""
+    if is_question:
+        print(f"[RAG PROMPT] Querying knowledge base for user text: {user_text}")
+        sys.stdout.flush()
+        rag_context = await search_knowledge_base(user_text, tenant_id)
+        
+    base_prompt = system_prompt
+    rules_text = ""
+    if "[CRITICAL CONVERSATIONAL RULES]:" in system_prompt:
+        parts = system_prompt.split("\n\n[CRITICAL CONVERSATIONAL RULES]:")
+        base_prompt = parts[0]
+        rules_text = "\n\n[CRITICAL CONVERSATIONAL RULES]:" + parts[1]
+
+    augmented_system_prompt = base_prompt
+    if rag_context:
+        augmented_system_prompt += f"\n\n[RELEVANT KNOWLEDGE BASE CONTEXT]:\n{rag_context}\n\nEnforce rules: Use only facts from this context to answer questions. If not present, state that a senior advisor will call back with details."
+        
+    if rules_text:
+        augmented_system_prompt += rules_text
+
+    llm_user_text = user_text
+    is_female = "You are a FEMALE agent" in system_prompt
+    gender_verb_advice = (
+        "ALWAYS use female grammar endings (e.g. 'rahi hoon', 'sakti hoon', 'paungi'). NEVER use male endings (e.g. 'raha', 'sakta', 'paunga')."
+        if is_female else
+        "ALWAYS use male grammar endings (e.g. 'raha hoon', 'sakta hoon', 'paunga'). NEVER use female endings (e.g. 'rahi', 'sakti', 'paungi')."
+    )
+    llm_user_text += f"\n\n(Important reminder: Reply in strictly 1-2 short lines maximum. Keep it simple and natural in Hinglish. Never use formatting, bullet points, asterisks, or bold text. {gender_verb_advice})"
+
+    if settings.GEMINI_API_KEY:
+        import google.generativeai as genai
+        try:
+            genai.configure(api_key=settings.GEMINI_API_KEY)
+            
+            contents = []
+            for msg in conversation_history:
+                role = "user" if msg["role"] == "user" else "model"
+                contents.append({"role": role, "parts": [msg["content"]]})
+            contents.append({"role": "user", "parts": [llm_user_text]})
+
+            # Target models/gemini-2.5-flash directly as selected fast model!
+            model_name = 'models/gemini-2.5-flash'
+            
+            model_kwargs = {
+                "model_name": model_name,
+                "system_instruction": augmented_system_prompt
+            }
+            if cached_gemini_tools:
+                model_kwargs["tools"] = cached_gemini_tools
+                
+            model = genai.GenerativeModel(**model_kwargs)
+            current_contents = list(contents)
+            
+            max_gemini_turns = 3
+            for g_turn in range(max_gemini_turns):
+                response = await asyncio.to_thread(
+                    model.generate_content,
+                    current_contents,
+                    generation_config={"temperature": 0.7},
+                    stream=True
+                )
+                
+                is_tool_call = False
+                tool_name = None
+                tool_args = {}
+                
+                iterator = iter(response)
+                while True:
+                    chunk = await asyncio.to_thread(next, iterator, None)
+                    if chunk is None:
+                        break
+                    
+                    if chunk.candidates and chunk.candidates[0].content.parts:
+                        part = chunk.candidates[0].content.parts[0]
+                        
+                        # Check for function call
+                        if hasattr(part, "function_call") and part.function_call and part.function_call.name:
+                            is_tool_call = True
+                            tool_name = part.function_call.name
+                            tool_args = dict(part.function_call.args)
+                            break
+                        elif hasattr(part, "text") and part.text:
+                            if latency_tracker:
+                                latency_tracker.record_first_token()
+                            yield part.text
+                            
+                if is_tool_call:
+                    print(f"[GEMINI TOOL CALL] Executing tool: {tool_name} with arguments: {tool_args}")
+                    sys.stdout.flush()
+                    tool_res = await execute_tool(tool_name, tool_args, tenant_id, lead_id, db_session_factory)
+                    print(f"[GEMINI TOOL RESULT] Tool {tool_name} returned: {tool_res}")
+                    sys.stdout.flush()
+                    
+                    current_contents.append({
+                        "role": "model",
+                        "parts": [part]
+                    })
+                    current_contents.append({
+                        "role": "user",
+                        "parts": [{
+                            "function_response": {
+                                "name": tool_name,
+                                "response": {"result": tool_res}
+                            }
+                        }]
+                    })
+                    continue
+                else:
+                    return
+        except Exception as e:
+            print(f"[LLM ERROR] Gemini streaming pipeline failed: {str(e)}")
+            sys.stdout.flush()
+            
+    # Fallback to OpenAI streaming
+    client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
+    messages = [{"role": "system", "content": augmented_system_prompt}] + conversation_history
+    messages.append({"role": "user", "content": llm_user_text})
+    
+    max_turns = 3
+    for turn in range(max_turns):
+        try:
+            kwargs = {
+                "model": "gpt-4o",
+                "messages": messages,
+                "temperature": 0.7,
+                "max_tokens": 250,
+                "stream": True
+            }
+            if cached_openai_tools:
+                kwargs["tools"] = cached_openai_tools
+                kwargs["tool_choice"] = "auto"
+                
+            response = await client.chat.completions.create(**kwargs)
+            
+            tool_calls_accumulator = {}
+            async for chunk in response:
+                if chunk.choices and chunk.choices[0].delta:
+                    delta = chunk.choices[0].delta
+                    if delta.content:
+                        if latency_tracker:
+                            latency_tracker.record_first_token()
+                        yield delta.content
+                    if delta.tool_calls:
+                        for tc in delta.tool_calls:
+                            idx = tc.index
+                            if idx not in tool_calls_accumulator:
+                                tool_calls_accumulator[idx] = {
+                                    "id": tc.id,
+                                    "name": tc.function.name if tc.function and tc.function.name else "",
+                                    "arguments": tc.function.arguments if tc.function and tc.function.arguments else ""
+                                }
+                            else:
+                                if tc.id:
+                                    tool_calls_accumulator[idx]["id"] = tc.id
+                                if tc.function:
+                                    if tc.function.name:
+                                        tool_calls_accumulator[idx]["name"] += tc.function.name
+                                    if tc.function.arguments:
+                                        tool_calls_accumulator[idx]["arguments"] += tc.function.arguments
+                                        
+            if tool_calls_accumulator:
+                # Resolve tool calls
+                openai_message = {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": []
+                }
+                for idx, tc in tool_calls_accumulator.items():
+                    openai_message["tool_calls"].append({
+                        "id": tc["id"],
+                        "type": "function",
+                        "function": {
+                            "name": tc["name"],
+                            "arguments": tc["arguments"]
+                        }
+                    })
+                messages.append(openai_message)
+                
+                for idx, tc in tool_calls_accumulator.items():
+                    name = tc["name"]
+                    args = json.loads(tc["arguments"])
+                    print(f"[OPENAI TOOL CALL] Executing tool: {name} with arguments: {args}")
+                    sys.stdout.flush()
+                    tool_res = await execute_tool(name, args, tenant_id, lead_id, db_session_factory)
+                    print(f"[OPENAI TOOL RESULT] Tool {name} returned: {tool_res}")
+                    sys.stdout.flush()
+                    
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc["id"],
+                        "name": name,
+                        "content": tool_res
+                    })
+                continue
+            else:
+                break
+        except Exception as e:
+            print(f"[LLM ERROR] GPT-4o streaming call or tool execution failed: {str(e)}")
+            sys.stdout.flush()
+            yield "I am sorry, I am having trouble connecting right now."
+            break
 
 async def query_gpt4o_dialogue(
     user_text: str,
@@ -656,6 +1003,35 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
         ).first()
         system_prompt = db_prompt.prompt_text if db_prompt else (tenant.system_prompt if tenant else "You are Neha, an admissions advisor at CoderVu.")
         
+        # Load active tools once here and cache them for the call duration (reducing Neon DB overhead)
+        active_tools = db.query(ToolSchema).filter(
+            ToolSchema.tenant_id == tenant_id,
+            ToolSchema.is_active == True
+        ).all()
+        
+        cached_openai_tools = []
+        for tool in active_tools:
+            cached_openai_tools.append({
+                "type": "function",
+                "function": {
+                    "name": tool.name,
+                    "description": tool.description or "",
+                    "parameters": tool.json_schema
+                }
+            })
+
+        cached_gemini_tools = []
+        for tool in active_tools:
+            cached_gemini_tools.append({
+                "function_declarations": [
+                    {
+                        "name": tool.name,
+                        "description": tool.description or "",
+                        "parameters": convert_schema_to_gemini(tool.json_schema)
+                    }
+                ]
+            })
+            
         # Resolve language: check tenant settings first, otherwise fallback to Twilio parameter
         if tenant and tenant.settings and "default_language" in tenant.settings:
             selected_language = tenant.settings["default_language"]
@@ -674,6 +1050,15 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
         response_delay_enabled = tenant.settings.get("response_delay_enabled", False) if (tenant and tenant.settings and isinstance(tenant.settings, dict)) else False
     finally:
         db.close()
+
+    # Initialize latency tracker
+    latency_tracker = CallTurnLatencyTracker()
+
+    # Establish persistent ElevenLabs TTS client if enabled
+    tts_client = None
+    if tts_provider == "ELEVENLABS" and elevenlabs_key:
+        tts_client = PersistentElevenLabsTTS(voice_id, elevenlabs_key, latency_tracker)
+        await tts_client.connect()
 
     agent_name = extract_agent_name(system_prompt)
     is_female = is_female_agent(agent_name, voice_id, system_prompt)
@@ -699,7 +1084,7 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
     )
 
     # 3. Establish Deepgram STT websocket client
-    dg_url = "wss://api.deepgram.com/v1/listen?encoding=mulaw&sample_rate=8000&channels=1"
+    dg_url = "wss://api.deepgram.com/v1/listen?encoding=mulaw&sample_rate=8000&channels=1&endpointing=300"
     if selected_language == "auto":
         if tenant and tenant.timezone == "Asia/Kolkata":
             dg_url += "&model=nova-2&language=hi"
@@ -716,6 +1101,12 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
         async with websockets.connect(dg_url, additional_headers=dg_headers) as dg_ws:
             
             print("[TELEPHONY] Integrations connected successfully. Ready to stream.")
+            sys.stdout.flush()
+
+            # Start persistent ElevenLabs WebSocket listen loop if active
+            tts_listener_task = None
+            if tts_client and tts_client.is_connected:
+                tts_listener_task = asyncio.create_task(tts_client.listen_loop(twilio_ws, stream_sid))
 
             # Trigger dynamic welcome greeting based on prompt persona and chosen language
             user_name = lead.name if lead else "there"
@@ -730,8 +1121,20 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
                 greeting = f"Hello! Am I speaking with {user_name}? I am {agent_name} from {company_name}. Hope I am not disturbing you. Do you have 30 seconds? I wanted to share some quick information about an insurance plan that could be useful for you."
                 
             print(f"[TELEPHONY] Sending initial greeting: {greeting}")
-            tts_task = asyncio.create_task(render_tts_and_send_to_twilio(greeting, voice_id, twilio_ws, stream_sid, tts_provider))
-            active_tts_tasks.append(tts_task)
+            if tts_client and tts_client.is_connected:
+                # Use persistent client
+                await tts_client.el_ws.send(json.dumps({
+                    "text": greeting + " ",
+                    "try_trigger_generation": True
+                }))
+                await tts_client.el_ws.send(json.dumps({
+                    "text": " ",
+                    "try_trigger_generation": True
+                }))
+            else:
+                tts_task = asyncio.create_task(render_tts_and_send_to_twilio(greeting, voice_id, twilio_ws, stream_sid, tts_provider))
+                active_tts_tasks.append(tts_task)
+                
             conversation_history.append({"role": "assistant", "content": greeting})
             
             # Helper: Forward Twilio Inbound call audio to Deepgram
@@ -761,6 +1164,9 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
                         if transcript and is_final:
                             print(f"[STT USER]: {transcript}")
                             
+                            # Start latency tracking for this turn
+                            latency_tracker.start_turn()
+                            
                             # Publish transcript updates to Live UI Websockets
                             publish_sync(f"campaign:{campaign_id}:lead:{lead_id}", {
                                 "speaker": "User",
@@ -768,10 +1174,12 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
                             })
                             
                             # Barge-in interruption handler: Flush Twilio playback buffer immediately
-                            if active_tts_tasks:
+                            if active_tts_tasks or (tts_client and tts_client.is_connected):
                                 print("[BARGE-IN] User interrupted AI. Flushing Twilio audio buffer and canceling tasks.")
                                 clear_cmd = {"event": "clear", "streamSid": stream_sid}
                                 await twilio_ws.send_json(clear_cmd)
+                                if tts_client:
+                                    await tts_client.flush()
                                 for task in active_tts_tasks:
                                     if not task.done():
                                         task.cancel()
@@ -792,19 +1200,38 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
                                 )
                                 active_tts_tasks.append(ack_task)
                             
-                            # 3. Query GPT-4o dialogue controller
-                            reply, was_rag = await query_gpt4o_dialogue(
+                            # 3. Query GPT-4o dialogue controller and stream response
+                            full_reply = ""
+                            async for text_chunk in query_gpt4o_dialogue_stream(
                                 transcript,
                                 conversation_history,
                                 system_prompt,
                                 tenant_id,
                                 lead_id,
-                                db_session_factory
-                            )
-                            print(f"[LLM AGENT] Raw reply: {reply}")
-                            
-                            # 4. Clean reply by stripping extra formatting
-                            final_reply = reply.replace("**", "").replace("*", "").replace("`", "").strip()
+                                db_session_factory,
+                                cached_openai_tools,
+                                cached_gemini_tools,
+                                latency_tracker
+                            ):
+                                full_reply += text_chunk
+                                
+                                # Clean reply of extra formatting
+                                clean_chunk = text_chunk.replace("**", "").replace("*", "").replace("`", "")
+                                if tts_client and tts_client.is_connected:
+                                    await tts_client.el_ws.send(json.dumps({
+                                        "text": clean_chunk,
+                                        "try_trigger_generation": True
+                                    }))
+                                    
+                            # Signal ElevenLabs that text stream is completed for this turn
+                            if tts_client and tts_client.is_connected:
+                                await tts_client.el_ws.send(json.dumps({
+                                    "text": " ",
+                                    "try_trigger_generation": True
+                                }))
+                                
+                            print(f"[LLM AGENT] Raw reply completed: {full_reply}")
+                            final_reply = full_reply.replace("**", "").replace("*", "").replace("`", "").strip()
                             print(f"[LLM AGENT] Clean reply: {final_reply}")
                             
                             # Save history turn
@@ -817,19 +1244,19 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
                                 "text": final_reply
                             })
                             
-                            # 5. Dispatch TTS rendering tasks in background (concurrently with ack_task if it is running)
-                            # Pass ack_task to final response's TTS rendering so it waits for acknowledgment only right before sending audio to Twilio
-                            tts_task = asyncio.create_task(
-                                render_tts_and_send_to_twilio(
-                                    final_reply, 
-                                    voice_id, 
-                                    twilio_ws, 
-                                    stream_sid, 
-                                    tts_provider, 
-                                    wait_for_task=ack_task
+                            # 5. Fallback path: If persistent ElevenLabs is not active, dispatch legacy rendering task
+                            if not tts_client or not tts_client.is_connected:
+                                tts_task = asyncio.create_task(
+                                    render_tts_and_send_to_twilio(
+                                        final_reply, 
+                                        voice_id, 
+                                        twilio_ws, 
+                                        stream_sid, 
+                                        tts_provider, 
+                                        wait_for_task=ack_task
+                                    )
                                 )
-                            )
-                            active_tts_tasks.append(tts_task)
+                                active_tts_tasks.append(tts_task)
                             
                 except Exception as e:
                     print(f"[STT PROCESSOR] Transcript exception: {str(e)}")
@@ -843,6 +1270,9 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
     except Exception as e:
         print(f"[TELEPHONY ORCHESTRATOR ERROR] Error in WS media loops: {str(e)}")
     finally:
+        # Clean up persistent ElevenLabs connection if any
+        if tts_client:
+            await tts_client.close()
         # Save Call Logs to database on completion
         await save_telephony_call_log(db_session_factory, tenant_id, campaign_id, lead_id, conversation_history, call_sid)
 
