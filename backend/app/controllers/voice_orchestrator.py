@@ -226,9 +226,20 @@ async def query_gpt4o_dialogue(
         print(f"[RAG PROMPT] Querying knowledge base for user text: {user_text}")
         rag_context = await search_knowledge_base(user_text, tenant_id)
         
-    augmented_system_prompt = system_prompt
+    # Split the critical rules to ensure they are always placed at the very end of system instruction (recency bias)
+    base_prompt = system_prompt
+    rules_text = ""
+    if "[CRITICAL CONVERSATIONAL RULES]:" in system_prompt:
+        parts = system_prompt.split("\n\n[CRITICAL CONVERSATIONAL RULES]:")
+        base_prompt = parts[0]
+        rules_text = "\n\n[CRITICAL CONVERSATIONAL RULES]:" + parts[1]
+
+    augmented_system_prompt = base_prompt
     if rag_context:
         augmented_system_prompt += f"\n\n[RELEVANT KNOWLEDGE BASE CONTEXT]:\n{rag_context}\n\nEnforce rules: Use only facts from this context to answer questions. If not present, state that a senior advisor will call back with details."
+        
+    if rules_text:
+        augmented_system_prompt += rules_text
 
     # Load active tools for this tenant
     db = db_session_factory()
@@ -268,6 +279,16 @@ async def query_gpt4o_dialogue(
             ]
         })
 
+    # Build dynamically-reminded user query to strictly enforce constraints on both Gemini and OpenAI
+    llm_user_text = user_text
+    is_female = "You are a FEMALE agent" in system_prompt
+    gender_verb_advice = (
+        "ALWAYS use female grammar endings (e.g. 'rahi hoon', 'sakti hoon', 'paungi'). NEVER use male endings (e.g. 'raha', 'sakta', 'paunga')."
+        if is_female else
+        "ALWAYS use male grammar endings (e.g. 'raha hoon', 'sakta hoon', 'paunga'). NEVER use female endings (e.g. 'rahi', 'sakti', 'paungi')."
+    )
+    llm_user_text += f"\n\n(Important reminder: Reply in strictly 1-2 short lines maximum. Keep it simple and natural in Hinglish. Never use formatting, bullet points, asterisks, or bold text. {gender_verb_advice})"
+
     if settings.GEMINI_API_KEY:
         import google.generativeai as genai
         try:
@@ -278,7 +299,7 @@ async def query_gpt4o_dialogue(
             for msg in conversation_history:
                 role = "user" if msg["role"] == "user" else "model"
                 contents.append({"role": role, "parts": [msg["content"]]})
-            contents.append({"role": "user", "parts": [user_text]})
+            contents.append({"role": "user", "parts": [llm_user_text]})
 
             models_to_try = [
                 'models/gemini-3.1-flash-lite',
@@ -351,7 +372,7 @@ async def query_gpt4o_dialogue(
     # Fallback to OpenAI if Gemini is not available or failed
     client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
     messages = [{"role": "system", "content": augmented_system_prompt}] + conversation_history
-    messages.append({"role": "user", "content": user_text})
+    messages.append({"role": "user", "content": llm_user_text})
     
     max_turns = 3
     for turn in range(max_turns):
@@ -409,6 +430,62 @@ def is_valid_name(name: str) -> bool:
     for word in words:
         if word.lower() in stopwords:
             return False
+    return True
+
+def is_female_agent(agent_name: str, voice_id: str, system_prompt: str) -> bool:
+    female_voice_ids = {
+        "21m00Tcm4TlvDq8ikWAM",  # Rachel
+        "AZnzlk1XvdvUeBnXmlld",  # Neha
+        "EXAVITQu4vr4xnSDxMaL",  # Bella
+        "cgSgspJ2msm6clMCkdW9",  # Jessica (default)
+        "saranya",
+        "geeta",
+        "nisha",
+        "v-neha",
+        "v-aria"
+    }
+    male_voice_ids = {
+        "ErXwobaYiN019PkySvjV",  # Antoni
+        "aditya",
+        "arvind",
+        "lokesh",
+        "v-arjun",
+        "v-raj"
+    }
+    if voice_id in female_voice_ids:
+        return True
+    if voice_id in male_voice_ids:
+        return False
+
+    # Try fetching from ElevenLabs voices dynamically to see if gender label is specified
+    try:
+        from app.routes.tenant_routes import fetch_elevenlabs_voices
+        voices_list = fetch_elevenlabs_voices()
+        for v in voices_list:
+            if v.get("voice_id") == voice_id:
+                v_gender = v.get("gender", "").lower()
+                if "female" in v_gender:
+                    return True
+                elif "male" in v_gender:
+                    return False
+    except Exception as e:
+        print(f"[VOICE ORCHESTRATOR] Error fetching ElevenLabs voice gender: {e}")
+        
+    female_names = {"neha", "rachel", "bella", "jessica", "saranya", "geeta", "nisha", "priya", "pooja", "sneha", "ananya", "aditi", "riya"}
+    male_names = {"antoni", "aditya", "arvind", "lokesh", "rohan", "suresh", "amit", "rahul", "vikram"}
+    
+    if agent_name.lower() in female_names:
+        return True
+    if agent_name.lower() in male_names:
+        return False
+
+    prompt_lower = system_prompt.lower() if system_prompt else ""
+    if any(kw in prompt_lower for kw in ["female", "she", "her", "kar rahi", "bol rahi"]):
+        return True
+    if any(kw in prompt_lower for kw in ["male", "he", "him", "kar raha", "bol raha"]):
+        return False
+
+    # Default fallback to female
     return True
 
 def extract_agent_name(system_prompt: str) -> str:
@@ -547,6 +624,29 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
     finally:
         db.close()
 
+    agent_name = extract_agent_name(system_prompt)
+    is_female = is_female_agent(agent_name, voice_id, system_prompt)
+    
+    # If no name was found in system prompt, assign a natural fallback name based on gender
+    if agent_name == "AI":
+        agent_name = "Neha" if is_female else "Rohan"
+
+    gender_instruction = (
+        "You are a FEMALE agent. When speaking in Hindi or Hinglish, you MUST ALWAYS use female grammar endings (verbs/adjectives like 'bol rahi hoon', 'kar rahi hoon', 'ho sakti hai', 'de sakti hoon', 'bataungi', 'bata sakti hoon', 'jaungi', 'paungi'). NEVER use male endings like 'raha', 'sakta', 'karunga', 'paunga', 'bataunga'."
+        if is_female else
+        "You are a MALE agent. When speaking in Hindi or Hinglish, you MUST ALWAYS use male grammar endings (verbs/adjectives like 'bol raha hoon', 'kar raha hoon', 'ho sakta hai', 'de sakta hoon', 'bataunga', 'bata sakta hoon', 'jaunga', 'paunga'). NEVER use female endings like 'rahi', 'sakti', 'karungi', 'paungi', 'bataungi'."
+    )
+    
+    system_prompt += (
+        f"\n\n[CRITICAL CONVERSATIONAL RULES]:\n"
+        f"1. Agent Identity: Your name is {agent_name}. {gender_instruction}\n"
+        f"2. Length Constraint: ALWAYS reply in 1-2 short lines maximum. Keep answers simple, natural, and highly conversational. NEVER give long explanations, paragraphs, or details unless explicitly asked by the user.\n"
+        f"3. Structure: NEVER use bullet points, list numbers, asterisks, bolding, or markdown formatting in your response. Speak in natural continuous sentences.\n"
+        f"4. Tone: Be friendly, polite, and human-like. Sound like a real person, not a textbook or a teacher.\n"
+        f"5. Language & Hinglish: If the user speaks/asks in Hindi or Hinglish, respond in natural, friendly Hinglish (a mix of Hindi and simple English words, written in Latin script or Devanagari script matching the user's script). Use everyday conversational terms.\n"
+        f"6. Flow: Keep the conversation going by asking a single short, natural follow-up question at the end of your response."
+    )
+
     # 3. Establish Deepgram STT websocket client
     dg_url = "wss://api.deepgram.com/v1/listen?encoding=mulaw&sample_rate=8000&channels=1"
     if selected_language == "auto":
@@ -569,10 +669,12 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
             # Trigger dynamic welcome greeting based on prompt persona and chosen language
             user_name = lead.name if lead else "there"
             company_name = tenant.company_name if (tenant and tenant.company_name) else "SecureLife Insurance"
-            agent_name = extract_agent_name(system_prompt)
 
             if selected_language == "auto" or selected_language == "hindi":
-                greeting = f"Hello, namaste! Kya main {user_name} se baat kar raha hoon? Main {agent_name} bol raha hoon, {company_name} se. Main aapko disturb toh nahi kar raha? 30 seconds ka time milega? Aapke liye ek insurance plan ke baare me short information share karni thi jo aapke liye useful ho sakti hai."
+                if is_female:
+                    greeting = f"Hello, namaste! Kya main {user_name} se baat kar rahi hoon? Main {agent_name} bol rahi hoon, {company_name} se. Main aapko disturb toh nahi kar rahi? 30 seconds ka time milega? Aapke liye ek insurance plan ke baare me short information share karni thi jo aapke liye useful ho sakti hai."
+                else:
+                    greeting = f"Hello, namaste! Kya main {user_name} se baat kar raha hoon? Main {agent_name} bol raha hoon, {company_name} se. Main aapko disturb toh nahi kar raha? 30 seconds ka time milega? Aapke liye ek insurance plan ke baare me short information share karni thi jo aapke liye useful ho sakti hai."
             else:
                 greeting = f"Hello! Am I speaking with {user_name}? I am {agent_name} from {company_name}. Hope I am not disturbing you. Do you have 30 seconds? I wanted to share some quick information about an insurance plan that could be useful for you."
                 

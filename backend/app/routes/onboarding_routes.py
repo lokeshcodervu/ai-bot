@@ -255,7 +255,11 @@ def select_industry(request_in: SelectIndustryRequest, db: Session = Depends(get
         "Healthcare": "You are a professional healthcare assistant. Assist with appointment scheduling and answering general service questions.",
         "Finance": "You are a professional financial services assistant. Assist with product inquiries and consultation scheduling.",
         "E-commerce": "You are a professional e-commerce sales assistant. Assist with product details, order statuses, and support.",
-        "Insurance": "You are a professional insurance sales assistant. Answer questions about policies, premium pricing, claims, and scheduling consultations.",
+        "Insurance": (
+            "You are a friendly and human-like insurance sales assistant. "
+            "Always reply in 1-2 short lines maximum. Keep answers simple, natural, and conversational in Hinglish. "
+            "Sound helpful, not like a teacher or textbook. Ask small follow-up questions to continue the conversation."
+        ),
     }
     
     baseline_prompt = "You are a helpful AI sales assistant."
