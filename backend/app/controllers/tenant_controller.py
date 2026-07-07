@@ -85,9 +85,10 @@ def check_ai_ready_status(db: Session, db_tenant: Tenant) -> bool:
     return is_ready
 
 def select_voice(db: Session, db_tenant: Tenant, voice_id: str) -> Tenant:
-    """Select ElevenLabs voice and re-evaluate AI Ready status."""
+    """Select voice and re-evaluate AI Ready status."""
     db_tenant.voice_id = voice_id
-    db_tenant.voice_provider = "ELEVENLABS"
+    provider = db_tenant.settings.get("tts_provider", "ELEVENLABS") if (db_tenant.settings and isinstance(db_tenant.settings, dict)) else "ELEVENLABS"
+    db_tenant.voice_provider = provider
     check_ai_ready_status(db, db_tenant)
     db.commit()
     db.refresh(db_tenant)

@@ -1044,6 +1044,9 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
     tenant_id = None
     selected_language = "english"
     
+    elevenlabs_key = os.getenv("elevenlabs") or os.getenv("ELEVENLABS_API_KEY")
+    sarvam_key = os.getenv("SARVAM_AI_KEY")
+    
     conversation_history = []
     active_tts_tasks = []
     
