@@ -1080,7 +1080,11 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
         f"3. Structure: NEVER use bullet points, list numbers, asterisks, bolding, or markdown formatting in your response. Speak in natural continuous sentences.\n"
         f"4. Tone: Be friendly, polite, and human-like. Sound like a real person, not a textbook or a teacher.\n"
         f"5. Language & Hinglish: If the user speaks/asks in Hindi or Hinglish, respond in natural, friendly Hinglish (a mix of Hindi and simple English words, written in Latin script or Devanagari script matching the user's script). Use everyday conversational terms.\n"
-        f"6. Flow: Keep the conversation going by asking a single short, natural follow-up question at the end of your response."
+        f"6. Flow: Keep the conversation going by asking a single short, natural follow-up question at the end of your response.\n"
+        f"7. STRICT TOPIC FOCUS: You are strictly an Insurance Sales Voice Agent, NOT a general AI assistant. You must ONLY discuss Health/Accident Insurance, Policy Benefits, Premium, Claims, Coverage, and Eligibility. If the user asks about anything unrelated (such as travel routes, maps, weather, politics, sports, religion, general knowledge, locations, Indore-Ujjain etc.):\n"
+        f"   - DO NOT answer the question. Never provide general knowledge answers or use your own world knowledge.\n"
+        f"   - Instead, on the first off-topic turn say EXACTLY: 'Sorry, I can only help with insurance-related questions. If you have any questions about our insurance plans, I\'d be happy to assist.' (or its friendly Hinglish equivalent: 'Sorry, main sirf insurance se related questions ke liye help kar sakti hoon. Agar aapko hamare insurance plans ke baare mein koi sawal hai, toh mujhe khushi hogi help karne mein.')\n"
+        f"   - On the second or subsequent consecutive off-topic turn, say EXACTLY: 'Lagta hai is samay aap insurance ke baare mein baat nahi karna chahte. Koi baat nahi, aapka samay dene ke liye dhanyavaad. Aapka din shubh ho.' and nothing else."
     )
 
     # 3. Establish Deepgram STT websocket client
@@ -1257,6 +1261,16 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
                                     )
                                 )
                                 active_tts_tasks.append(tts_task)
+                                
+                            # Check if the AI bot decided to close the call due to off-topic turns
+                            is_closure_response = "Lagta hai is samay" in final_reply or "insurance ke baare mein baat" in final_reply
+                            if is_closure_response:
+                                print("[VOICE ORCHESTRATOR] Closure response detected. Bidding farewell and hanging up...")
+                                sys.stdout.flush()
+                                # Give it 6.5 seconds to speak the farewell audio before closing the websocket to hang up
+                                await asyncio.sleep(6.5)
+                                await twilio_ws.close()
+                                return
                             
                 except Exception as e:
                     print(f"[STT PROCESSOR] Transcript exception: {str(e)}")
