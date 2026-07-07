@@ -135,6 +135,99 @@ class PersistentElevenLabsTTS:
                 self.el_ws = None
                 await asyncio.sleep(0.1)
 
+class PersistentSarvamTTS:
+    def __init__(self, voice_id: str, sarvam_key: str, latency_tracker: CallTurnLatencyTracker = None):
+        self.voice_id = voice_id
+        self.sarvam_key = sarvam_key
+        self.latency_tracker = latency_tracker
+        self.sarvam_ws = None
+        self.current_stream_sid = None
+        self.twilio_ws = None
+        self.is_connected = False
+        self.connect_task = None
+        self._lock = asyncio.Lock()
+
+    async def connect(self):
+        async with self._lock:
+            if self.is_connected and self.sarvam_ws:
+                return
+            url = "wss://api.sarvam.ai/text-to-speech/ws"
+            headers = {
+                "api-subscription-key": self.sarvam_key
+            }
+            try:
+                self.sarvam_ws = await websockets.connect(url, additional_headers=headers)
+                speaker = map_to_sarvam_speaker(self.voice_id)
+                # Send config message immediately
+                await self.sarvam_ws.send(json.dumps({
+                    "type": "config",
+                    "data": {
+                        "target_language_code": "hi-IN",
+                        "speaker": speaker,
+                        "model": "bulbul:v3",
+                        "speech_sample_rate": 8000,
+                        "output_audio_codec": "mulaw"
+                    }
+                }))
+                self.is_connected = True
+                print("[PERSISTENT SARVAM] Connected and configured successfully.")
+                sys.stdout.flush()
+            except Exception as e:
+                print(f"[PERSISTENT SARVAM ERROR] Connection failed: {e}")
+                sys.stdout.flush()
+                self.is_connected = False
+                self.sarvam_ws = None
+
+    async def close(self):
+        async with self._lock:
+            if self.sarvam_ws:
+                try:
+                    await self.sarvam_ws.close()
+                except Exception:
+                    pass
+            self.is_connected = False
+            self.sarvam_ws = None
+
+    async def flush(self):
+        print("[PERSISTENT SARVAM] Flushing due to barge-in...")
+        sys.stdout.flush()
+        await self.close()
+        self.connect_task = asyncio.create_task(self.connect())
+
+    async def listen_loop(self, twilio_ws: WebSocket, stream_sid: str):
+        self.twilio_ws = twilio_ws
+        self.current_stream_sid = stream_sid
+        while True:
+            try:
+                if not self.is_connected or not self.sarvam_ws:
+                    await asyncio.sleep(0.05)
+                    continue
+                
+                async for response in self.sarvam_ws:
+                    data = json.loads(response)
+                    msg_type = data.get("type")
+                    if msg_type == "audio":
+                        audio_base64 = data.get("data", {}).get("audio")
+                        if audio_base64:
+                            if self.latency_tracker:
+                                self.latency_tracker.record_first_audio()
+                            media_payload = {
+                                "event": "media",
+                                "streamSid": self.current_stream_sid,
+                                "media": {
+                                    "payload": audio_base64
+                                }
+                            }
+                            await self.twilio_ws.send_json(media_payload)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"[PERSISTENT SARVAM LISTEN LOOP ERROR/CLOSE]: {e}")
+                sys.stdout.flush()
+                self.is_connected = False
+                self.sarvam_ws = None
+                await asyncio.sleep(0.1)
+
 # Reconfigure stdout/stderr to support Unicode characters in Windows consoles
 if hasattr(sys.stdout, "reconfigure"):
     try:
@@ -1054,10 +1147,13 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
     # Initialize latency tracker
     latency_tracker = CallTurnLatencyTracker()
 
-    # Establish persistent ElevenLabs TTS client if enabled
+    # Establish persistent TTS client if enabled
     tts_client = None
     if tts_provider == "ELEVENLABS" and elevenlabs_key:
         tts_client = PersistentElevenLabsTTS(voice_id, elevenlabs_key, latency_tracker)
+        await tts_client.connect()
+    elif tts_provider == "SARVAM" and sarvam_key:
+        tts_client = PersistentSarvamTTS(voice_id, sarvam_key, latency_tracker)
         await tts_client.connect()
 
     agent_name = extract_agent_name(system_prompt)
@@ -1127,14 +1223,22 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
             print(f"[TELEPHONY] Sending initial greeting: {greeting}")
             if tts_client and tts_client.is_connected:
                 # Use persistent client
-                await tts_client.el_ws.send(json.dumps({
-                    "text": greeting + " ",
-                    "try_trigger_generation": True
-                }))
-                await tts_client.el_ws.send(json.dumps({
-                    "text": " ",
-                    "try_trigger_generation": True
-                }))
+                if tts_provider == "ELEVENLABS":
+                    await tts_client.el_ws.send(json.dumps({
+                        "text": greeting + " ",
+                        "try_trigger_generation": True
+                    }))
+                    await tts_client.el_ws.send(json.dumps({
+                        "text": " ",
+                        "try_trigger_generation": True
+                    }))
+                elif tts_provider == "SARVAM":
+                    await tts_client.sarvam_ws.send(json.dumps({
+                        "type": "text",
+                        "data": {
+                            "text": greeting + " "
+                        }
+                    }))
             else:
                 tts_task = asyncio.create_task(render_tts_and_send_to_twilio(greeting, voice_id, twilio_ws, stream_sid, tts_provider))
                 active_tts_tasks.append(tts_task)
@@ -1222,17 +1326,33 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
                                 # Clean reply of extra formatting
                                 clean_chunk = text_chunk.replace("**", "").replace("*", "").replace("`", "")
                                 if tts_client and tts_client.is_connected:
+                                    if tts_provider == "ELEVENLABS":
+                                        await tts_client.el_ws.send(json.dumps({
+                                            "text": clean_chunk,
+                                            "try_trigger_generation": True
+                                        }))
+                                    elif tts_provider == "SARVAM":
+                                        await tts_client.sarvam_ws.send(json.dumps({
+                                            "type": "text",
+                                            "data": {
+                                                "text": clean_chunk
+                                            }
+                                        }))
+                                    
+                            # Signal persistent client that text stream is completed for this turn
+                            if tts_client and tts_client.is_connected:
+                                if tts_provider == "ELEVENLABS":
                                     await tts_client.el_ws.send(json.dumps({
-                                        "text": clean_chunk,
+                                        "text": " ",
                                         "try_trigger_generation": True
                                     }))
-                                    
-                            # Signal ElevenLabs that text stream is completed for this turn
-                            if tts_client and tts_client.is_connected:
-                                await tts_client.el_ws.send(json.dumps({
-                                    "text": " ",
-                                    "try_trigger_generation": True
-                                }))
+                                elif tts_provider == "SARVAM":
+                                    await tts_client.sarvam_ws.send(json.dumps({
+                                        "type": "text",
+                                        "data": {
+                                            "text": " "
+                                        }
+                                    }))
                                 
                             print(f"[LLM AGENT] Raw reply completed: {full_reply}")
                             final_reply = full_reply.replace("**", "").replace("*", "").replace("`", "").strip()
@@ -1284,7 +1404,8 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
     except Exception as e:
         print(f"[TELEPHONY ORCHESTRATOR ERROR] Error in WS media loops: {str(e)}")
     finally:
-        # Clean up persistent ElevenLabs connection if any
+        if tts_listener_task and not tts_listener_task.done():
+            tts_listener_task.cancel()
         if tts_client:
             await tts_client.close()
         # Save Call Logs to database on completion
