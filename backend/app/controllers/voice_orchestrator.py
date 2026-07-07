@@ -151,7 +151,7 @@ class PersistentSarvamTTS:
         async with self._lock:
             if self.is_connected and self.sarvam_ws:
                 return
-            url = "wss://api.sarvam.ai/text-to-speech/ws"
+            url = "wss://api.sarvam.ai/text-to-speech/ws?model=bulbul:v3"
             headers = {
                 "api-subscription-key": self.sarvam_key
             }
