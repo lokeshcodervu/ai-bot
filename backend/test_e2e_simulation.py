@@ -39,6 +39,10 @@ settings.PINECONE_API_KEY = None
 settings.OPENAI_API_KEY = None
 settings.GEMINI_API_KEY = None
 
+# Mock random.choice to always return "Answered" for deterministic test runs
+import random
+random.choice = lambda x: "Answered" if "Answered" in x else (x[0] if x else None)
+
 # Global print override to automatically flush stdout (prevent buffering in task logs)
 _original_print = print
 def print(*args, **kwargs):

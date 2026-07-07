@@ -670,6 +670,8 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
 
         voice_id = tenant.voice_id if (tenant and tenant.voice_id) else "cgSgspJ2msm6clMCkdW9" # Jessica default
         tts_provider = tenant.settings.get("tts_provider", "ELEVENLABS") if (tenant and tenant.settings and isinstance(tenant.settings, dict)) else "ELEVENLABS"
+        acknowledgment_enabled = tenant.settings.get("acknowledgment_enabled", False) if (tenant and tenant.settings and isinstance(tenant.settings, dict)) else False
+        response_delay_enabled = tenant.settings.get("response_delay_enabled", False) if (tenant and tenant.settings and isinstance(tenant.settings, dict)) else False
     finally:
         db.close()
 
@@ -776,16 +778,19 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
                                 active_tts_tasks.clear()
                             
                             # 1. Add Response Delay (300-800ms) to simulate human reaction/thinking time
-                            import random
-                            delay = (random.random() * 500 + 300) / 1000.0
-                            await asyncio.sleep(delay)
+                            if response_delay_enabled:
+                                import random
+                                delay = (random.random() * 500 + 300) / 1000.0
+                                await asyncio.sleep(delay)
                             
                             # 2. STT Acknowledgment Layer: play "hmm okay..." immediately
-                            ack_text = "hmm okay..."
-                            ack_task = asyncio.create_task(
-                                render_tts_and_send_to_twilio(ack_text, voice_id, twilio_ws, stream_sid, tts_provider)
-                            )
-                            active_tts_tasks.append(ack_task)
+                            ack_task = None
+                            if acknowledgment_enabled:
+                                ack_text = "hmm okay..."
+                                ack_task = asyncio.create_task(
+                                    render_tts_and_send_to_twilio(ack_text, voice_id, twilio_ws, stream_sid, tts_provider)
+                                )
+                                active_tts_tasks.append(ack_task)
                             
                             # 3. Query GPT-4o dialogue controller
                             reply, was_rag = await query_gpt4o_dialogue(
@@ -813,14 +818,18 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
                                 "text": final_reply
                             })
                             
-                            # 5. Wait for the acknowledgment task to finish playing before sending the main reply
-                            try:
-                                await ack_task
-                            except Exception as e:
-                                print(f"[TELEPHONY] Acknowledgment play failed or was cancelled: {e}")
-                            
-                            # 6. Dispatch TTS rendering tasks in background
-                            tts_task = asyncio.create_task(render_tts_and_send_to_twilio(final_reply, voice_id, twilio_ws, stream_sid, tts_provider))
+                            # 5. Dispatch TTS rendering tasks in background (concurrently with ack_task if it is running)
+                            # Pass ack_task to final response's TTS rendering so it waits for acknowledgment only right before sending audio to Twilio
+                            tts_task = asyncio.create_task(
+                                render_tts_and_send_to_twilio(
+                                    final_reply, 
+                                    voice_id, 
+                                    twilio_ws, 
+                                    stream_sid, 
+                                    tts_provider, 
+                                    wait_for_task=ack_task
+                                )
+                            )
                             active_tts_tasks.append(tts_task)
                             
                 except Exception as e:
@@ -838,7 +847,7 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
         # Save Call Logs to database on completion
         await save_telephony_call_log(db_session_factory, tenant_id, campaign_id, lead_id, conversation_history, call_sid)
 
-async def render_sarvam_tts_and_send_to_twilio(text: str, voice_id: str, twilio_ws: WebSocket, stream_sid: str):
+async def render_sarvam_tts_and_send_to_twilio(text: str, voice_id: str, twilio_ws: WebSocket, stream_sid: str, wait_for_task: asyncio.Task = None):
     """
     Renders text to speech using Sarvam AI REST API,
     and sends Base64 media packets to Twilio call socket.
@@ -880,6 +889,13 @@ async def render_sarvam_tts_and_send_to_twilio(text: str, voice_id: str, twilio_
                 audios = data.get("audios", [])
                 if audios:
                     audio_base64 = audios[0]
+                    
+                    if wait_for_task:
+                        try:
+                            await wait_for_task
+                        except Exception as e:
+                            print(f"[SARVAM TTS] Preceding task wait failed: {e}")
+                            
                     media_payload = {
                         "event": "media",
                         "streamSid": stream_sid,
@@ -895,7 +911,7 @@ async def render_sarvam_tts_and_send_to_twilio(text: str, voice_id: str, twilio_
     except Exception as e:
         print(f"[SARVAM TTS ERROR] Exception in Sarvam rendering: {str(e)}")
 
-async def render_tts_and_send_to_twilio(text: str, voice_id: str, twilio_ws: WebSocket, stream_sid: str, tts_provider: str = "ELEVENLABS"):
+async def render_tts_and_send_to_twilio(text: str, voice_id: str, twilio_ws: WebSocket, stream_sid: str, tts_provider: str = "ELEVENLABS", wait_for_task: asyncio.Task = None):
     """
     Pipes text segments to ElevenLabs or Sarvam AI, reads returned Mu-law audio, 
     and sends Base64 media packets to Twilio call socket.
@@ -906,7 +922,7 @@ async def render_tts_and_send_to_twilio(text: str, voice_id: str, twilio_ws: Web
     print(f"[TTS CONFIG] active_provider={tts_provider}, selected_voice={voice_id}")
 
     if (tts_provider == "SARVAM" or (not elevenlabs_key and sarvam_key)) and sarvam_key:
-        await render_sarvam_tts_and_send_to_twilio(text, voice_id, twilio_ws, stream_sid)
+        await render_sarvam_tts_and_send_to_twilio(text, voice_id, twilio_ws, stream_sid, wait_for_task)
         return
 
     import websockets
@@ -936,6 +952,7 @@ async def render_tts_and_send_to_twilio(text: str, voice_id: str, twilio_ws: Web
             }))
             
             # Read synthesized audio frames from ElevenLabs
+            has_awaited = False
             while True:
                 response = await el_ws.recv()
                 data = json.loads(response)
@@ -943,6 +960,13 @@ async def render_tts_and_send_to_twilio(text: str, voice_id: str, twilio_ws: Web
                 # Extract raw audio
                 audio_base64 = data.get("audio")
                 if audio_base64:
+                    if wait_for_task and not has_awaited:
+                        try:
+                            await wait_for_task
+                        except Exception as e:
+                            print(f"[TTS] Preceding task wait failed: {e}")
+                        has_awaited = True
+                        
                     # Pipe media payload directly to Twilio
                     media_payload = {
                         "event": "media",
@@ -983,13 +1007,52 @@ async def save_telephony_call_log(
             for turn in conversation_history
         ]
         
-        # Select simple classification tags based on history length
-        is_converted = any("visit" in turn["content"].lower() or "demo" in turn["content"].lower() for turn in conversation_history)
+        # Combine user utterances to search for intent keywords
+        user_utterances = [turn["content"].lower() for turn in conversation_history if turn["role"] == "user"]
+        user_text_combined = " ".join(user_utterances)
+
+        is_not_interested = any(
+            kw in user_text_combined
+            for kw in [
+                "not interested", "no interest", "intrested nahi", "interest nahi", "intrest nahi",
+                "call mat karna", "call mat karo", "call mat kiye", "ab call mat", "ab call nahi",
+                "ab call mat karo", "nahi chahiye", "rehne do", "no thanks", "no thank you", "wrong number",
+                "don't call", "dont call"
+            ]
+        )
         
-        # Generate summary
-        summary = "Qualified admissions inquiry."
-        if is_converted:
-            summary = "Admissions call completed. Booked python syllabus site visit."
+        is_call_later = any(
+            kw in user_text_combined
+            for kw in [
+                "call back later", "call me later", "busy now", "busy right now", "talk later",
+                "baat me call", "baad me call", "baad mei call", "busy hoon", "meeting me",
+                "meeting mein", "kal call", "parso call", "doosre time", "dusre time", "phir kabhi",
+                "bad me", "baat me", "driving"
+            ]
+        )
+
+        is_converted = any(
+            "visit" in turn["content"].lower() or "demo" in turn["content"].lower() 
+            for turn in conversation_history
+        )
+
+        # Classify the final lead status, intent tag, and call summary
+        if is_not_interested:
+            final_status = LeadStatus.NOT_INTERESTED
+            intent_tag = "Not Interested"
+            summary = "Prospect requested to opt-out or was not interested."
+        elif is_call_later:
+            final_status = LeadStatus.NEEDS_FOLLOW_UP
+            intent_tag = "Call Later"
+            summary = "Prospect requested to be called back later or was busy."
+        elif is_converted:
+            final_status = LeadStatus.CONVERTED
+            intent_tag = "Warm Lead"
+            summary = "Admissions call completed. Booked site visit/demo."
+        else:
+            final_status = LeadStatus.NEEDS_FOLLOW_UP
+            intent_tag = "Cold Call"
+            summary = "Qualified admissions inquiry."
             
         # Fetch tenant Twilio settings to query Twilio recording
         tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
@@ -1027,19 +1090,30 @@ async def save_telephony_call_log(
             call_disposition="Answered",
             recording_url=recording_url,
             ai_summary=summary,
-            intent_tag="Warm Lead" if is_converted else "Cold Call",
+            intent_tag=intent_tag,
             transcript=transcript_data
         )
         
-        # Update Lead Status
+        # Update Lead Status in Database
         lead = db.query(Lead).filter(Lead.id == lead_id).first()
         if lead:
-            lead.status = LeadStatus.CONVERTED if is_converted else LeadStatus.NEEDS_FOLLOW_UP
+            lead.status = final_status
             lead.call_disposition = "Answered"
             
         db.add(db_log)
         db.commit()
         print(f"[TELEPHONY] Successfully saved CallLog for lead={lead_id} to database.")
+
+        # Publish final completed status to campaign WS room so frontend updates in real time
+        if campaign_id and campaign_id != "single-call" and lead:
+            print(f"[TELEPHONY] Publishing status update to frontend for lead={lead_id}: status={final_status}")
+            publish_sync(f"campaign:{campaign_id}", {
+                "event": "status_update",
+                "lead_id": str(lead_id),
+                "status": final_status,
+                "disposition": "Answered"
+            })
+            
     except Exception as e:
         db.rollback()
         print(f"[TELEPHONY] Failed to save CallLog: {str(e)}")
