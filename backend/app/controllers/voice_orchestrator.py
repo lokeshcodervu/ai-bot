@@ -803,10 +803,9 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
                             )
                             print(f"[LLM AGENT] Raw reply: {reply}")
                             
-                            # 4. Humanize reply and add fillers
-                            humanized_reply = humanize_text(reply)
-                            final_reply = add_filler(humanized_reply)
-                            print(f"[LLM AGENT] Optimized reply: {final_reply}")
+                            # 4. Clean reply by stripping extra formatting
+                            final_reply = reply.replace("**", "").replace("*", "").replace("`", "").strip()
+                            print(f"[LLM AGENT] Clean reply: {final_reply}")
                             
                             # Save history turn
                             conversation_history.append({"role": "user", "content": transcript})
