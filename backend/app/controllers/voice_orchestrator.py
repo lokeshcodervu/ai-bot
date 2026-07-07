@@ -40,6 +40,58 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY") or os.getenv("OPENAI_API_KEY") # fallback to openai key if same provider or debug
 ELEVENLABS_API_KEY = os.getenv("elevenlabs") or os.getenv("ELEVENLABS_API_KEY")
 
+def humanize_text(text: str) -> str:
+    if not text:
+        return ""
+    # Replace commas and periods with "... " to introduce natural pauses
+    text = text.replace(",", "... ").replace(".", "... ")
+    # Replace any multiple consecutive dots with a single "... "
+    text = re.sub(r'\.{3,}', '... ', text)
+    # Strip whitespace and multiple spaces
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
+def add_filler(text: str) -> str:
+    import random
+    fillers = ["okay...", "so...", "hmm...", "actually..."]
+    # 70% chance to add a filler to keep it fresh and not overly predictable
+    if random.random() < 0.7:
+        filler = random.choice(fillers)
+        # Check if the text already starts with one of the fillers to avoid duplicates
+        text_lower = text.lower()
+        if not any(text_lower.startswith(f) for f in fillers) and not text_lower.startswith("hmm okay"):
+            return f"{filler} {text}"
+    return text
+
+def map_to_sarvam_speaker(voice_id: str) -> str:
+    supported = {
+        "aditya", "ritu", "ashutosh", "priya", "neha", "rahul", "pooja", "rohan",
+        "simran", "kavya", "amit", "dev", "ishita", "shreya", "ratan", "varun",
+        "manan", "sumit", "roopa", "kabir", "aayan", "shubh", "advait", "anand",
+        "tanya", "tarun", "sunny", "mani", "gokul", "vijay", "shruti", "suhani",
+        "mohit", "kavitha", "rehan", "soham", "rupali"
+    }
+    voice_lower = voice_id.lower() if voice_id else ""
+    if voice_lower in supported:
+        return voice_lower
+        
+    mappings = {
+        "saranya": "ritu",
+        "arvind": "shubh",
+        "geeta": "priya",
+        "lokesh": "rohan",
+        "nisha": "neha",
+        "v-neha": "neha",
+        "v-aria": "simran",
+        "v-arjun": "aditya",
+        "v-raj": "rohan",
+        "rachel": "ritu",
+        "bella": "shreya",
+        "jessica": "neha",
+        "antoni": "shubh"
+    }
+    return mappings.get(voice_lower, "aditya")
+
 async def search_knowledge_base(query: str, tenant_id: str) -> str:
     """
     Search the tenant's Pinecone knowledge base (RAG).
@@ -438,19 +490,16 @@ def is_female_agent(agent_name: str, voice_id: str, system_prompt: str) -> bool:
         "AZnzlk1XvdvUeBnXmlld",  # Neha
         "EXAVITQu4vr4xnSDxMaL",  # Bella
         "cgSgspJ2msm6clMCkdW9",  # Jessica (default)
-        "saranya",
-        "geeta",
-        "nisha",
-        "v-neha",
-        "v-aria"
+        "saranya", "geeta", "nisha", "v-neha", "v-aria",
+        "ritu", "priya", "simran", "roopa", "ishita", "shreya",
+        "kavya", "pooja", "tanya", "shruti", "suhani", "kavitha", "rupali"
     }
     male_voice_ids = {
         "ErXwobaYiN019PkySvjV",  # Antoni
-        "aditya",
-        "arvind",
-        "lokesh",
-        "v-arjun",
-        "v-raj"
+        "aditya", "arvind", "lokesh", "v-arjun", "v-raj",
+        "shubh", "rohan", "advait", "aayan", "ashutosh", "rahul",
+        "amit", "dev", "varun", "manan", "sumit", "kabir", "anand",
+        "tarun", "sunny", "mani", "gokul", "vijay", "mohit", "rehan", "soham"
     }
     if voice_id in female_voice_ids:
         return True
@@ -471,8 +520,8 @@ def is_female_agent(agent_name: str, voice_id: str, system_prompt: str) -> bool:
     except Exception as e:
         print(f"[VOICE ORCHESTRATOR] Error fetching ElevenLabs voice gender: {e}")
         
-    female_names = {"neha", "rachel", "bella", "jessica", "saranya", "geeta", "nisha", "priya", "pooja", "sneha", "ananya", "aditi", "riya"}
-    male_names = {"antoni", "aditya", "arvind", "lokesh", "rohan", "suresh", "amit", "rahul", "vikram"}
+    female_names = {"neha", "rachel", "bella", "jessica", "saranya", "geeta", "nisha", "priya", "pooja", "sneha", "ananya", "aditi", "riya", "ritu", "simran", "roopa", "ishita", "shreya", "kavya", "tanya", "shruti", "suhani", "kavitha", "rupali"}
+    male_names = {"antoni", "aditya", "arvind", "lokesh", "rohan", "suresh", "amit", "rahul", "vikram", "shubh", "advait", "aayan", "ashutosh", "dev", "varun", "manan", "sumit", "kabir", "anand", "tarun", "sunny", "mani", "gokul", "vijay", "mohit", "rehan", "soham"}
     
     if agent_name.lower() in female_names:
         return True
@@ -726,7 +775,19 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
                                         task.cancel()
                                 active_tts_tasks.clear()
                             
-                            # Query GPT-4o dialogue controller
+                            # 1. Add Response Delay (300-800ms) to simulate human reaction/thinking time
+                            import random
+                            delay = (random.random() * 500 + 300) / 1000.0
+                            await asyncio.sleep(delay)
+                            
+                            # 2. STT Acknowledgment Layer: play "hmm okay..." immediately
+                            ack_text = "hmm okay..."
+                            ack_task = asyncio.create_task(
+                                render_tts_and_send_to_twilio(ack_text, voice_id, twilio_ws, stream_sid, tts_provider)
+                            )
+                            active_tts_tasks.append(ack_task)
+                            
+                            # 3. Query GPT-4o dialogue controller
                             reply, was_rag = await query_gpt4o_dialogue(
                                 transcript,
                                 conversation_history,
@@ -735,20 +796,31 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
                                 lead_id,
                                 db_session_factory
                             )
-                            print(f"[LLM AGENT]: {reply}")
+                            print(f"[LLM AGENT] Raw reply: {reply}")
+                            
+                            # 4. Humanize reply and add fillers
+                            humanized_reply = humanize_text(reply)
+                            final_reply = add_filler(humanized_reply)
+                            print(f"[LLM AGENT] Optimized reply: {final_reply}")
                             
                             # Save history turn
                             conversation_history.append({"role": "user", "content": transcript})
-                            conversation_history.append({"role": "assistant", "content": reply})
+                            conversation_history.append({"role": "assistant", "content": final_reply})
                             
                             # Publish transcript updates to Live UI
                             publish_sync(f"campaign:{campaign_id}:lead:{lead_id}", {
                                 "speaker": "AI",
-                                "text": reply
+                                "text": final_reply
                             })
                             
-                            # Dispatch ElevenLabs TTS rendering tasks in background
-                            tts_task = asyncio.create_task(render_tts_and_send_to_twilio(reply, voice_id, twilio_ws, stream_sid, tts_provider))
+                            # 5. Wait for the acknowledgment task to finish playing before sending the main reply
+                            try:
+                                await ack_task
+                            except Exception as e:
+                                print(f"[TELEPHONY] Acknowledgment play failed or was cancelled: {e}")
+                            
+                            # 6. Dispatch TTS rendering tasks in background
+                            tts_task = asyncio.create_task(render_tts_and_send_to_twilio(final_reply, voice_id, twilio_ws, stream_sid, tts_provider))
                             active_tts_tasks.append(tts_task)
                             
                 except Exception as e:
@@ -788,7 +860,7 @@ async def render_sarvam_tts_and_send_to_twilio(text: str, voice_id: str, twilio_
     lang_code = "hi-IN" if has_hindi else "en-IN"
     
     # Map selected voice_id to a valid Sarvam speaker (or default to aditya)
-    speaker = voice_id if voice_id in ["aditya", "saranya", "arvind", "geeta", "lokesh", "nisha"] else "aditya"
+    speaker = map_to_sarvam_speaker(voice_id)
     print(f"[SARVAM AI] Rendering TTS: speaker={speaker}, language={lang_code}, text={text[:50]}...")
 
     payload = {
@@ -848,7 +920,7 @@ async def render_tts_and_send_to_twilio(text: str, voice_id: str, twilio_ws: Web
             await el_ws.send(json.dumps({
                 "text": " ",
                 "model_id": "eleven_multilingual_v2",
-                "voice_settings": {"stability": 0.5, "similarity_boost": 0.8},
+                "voice_settings": {"stability": 0.4, "similarity_boost": 0.6, "style": 0.7},
                 "xi_api_key": elevenlabs_key or ""
             }))
             
