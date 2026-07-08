@@ -170,14 +170,18 @@ export default function LiveMonitorPage() {
     }
   };
 
-  // Manage campaign status WebSockets for all campaigns
+  // Manage campaign status WebSockets for all campaigns + single-call
   useEffect(() => {
-    if (!token || campaignsList.length === 0) return;
+    if (!token) return;
 
     const sockets: WebSocket[] = [];
+    const targets = [
+      ...campaignsList.map(c => ({ id: c.id, name: c.name })),
+      { id: 'single-call', name: 'Single Call' }
+    ];
 
-    campaignsList.forEach(campaign => {
-      const wsUrl = `${WS_BASE}/campaigns/${campaign.id}/ws?token=${token}`;
+    targets.forEach(target => {
+      const wsUrl = `${WS_BASE}/campaigns/${target.id}/ws?token=${token}`;
       console.log(`Connecting to campaign status WS: ${wsUrl}`);
       
       const ws = new WebSocket(wsUrl);
@@ -185,14 +189,14 @@ export default function LiveMonitorPage() {
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          console.log(`Campaign ${campaign.name} WS event:`, data);
+          console.log(`Campaign ${target.name} WS event:`, data);
 
           if (data.event === 'status_update' && data.lead_id) {
             const leadId = data.lead_id;
             const status = data.status;
 
             if (status === 'Connected') {
-              fetchLeadDetailsAndAddCall(leadId, campaign.id, campaign.name);
+              fetchLeadDetailsAndAddCall(leadId, target.id, target.name);
             } else if (['Converted', 'Busy', 'No Answer', 'Not Interested', 'Needs Follow-up'].includes(status)) {
               setCalls(prevCalls => {
                 const remaining = prevCalls.filter(c => c.id !== leadId);
@@ -212,7 +216,7 @@ export default function LiveMonitorPage() {
       };
 
       ws.onerror = (err) => {
-        console.error(`Campaign WS error for ${campaign.name}:`, err);
+        console.error(`Campaign WS error for ${target.name}:`, err);
       };
 
       sockets.push(ws);
@@ -286,8 +290,21 @@ export default function LiveMonitorPage() {
     setBargeActive(false);
   };
 
-  // End a call locally
-  const handleEndCall = (id: string) => {
+  // End a call locally and on the backend
+  const handleEndCall = async (id: string) => {
+    try {
+      await fetch(`${API_BASE}/leads/${id}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ status: 'Needs Follow-up' })
+      });
+    } catch (err) {
+      console.error("Error updating lead status on backend ending call:", err);
+    }
+
     const remainingCalls = calls.filter(c => c.id !== id);
     setCalls(remainingCalls);
     if (selectedCallId === id && remainingCalls.length > 0) {

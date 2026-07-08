@@ -266,7 +266,10 @@ def process_campaign_dialing(db_session_factory, tenant_id: UUID, campaign_id: U
                         to=lead.phone,
                         from_=tenant.twilio_phone_number,
                         url=twiml_url,
-                        record=True
+                        record=True,
+                        status_callback=f"{callback_base}/api/v1/telephony/status-callback?lead_id={lead.id}&campaign_id={campaign_id}",
+                        status_callback_event=["completed", "busy", "no-answer", "failed", "canceled"],
+                        status_callback_method="POST"
                     )
                     print(f"[DIALER WORKER] Twilio call initiated successfully. Call SID: {call.sid}")
                     

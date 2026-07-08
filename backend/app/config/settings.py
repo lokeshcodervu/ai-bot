@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     PINECONE_INDEX_NAME: str = "ai-bot-index"
     OPENAI_API_KEY: Optional[str] = None
     GEMINI_API_KEY: Optional[str] = None
+    SARVAM_AI_KEY: Optional[str] = None
+    ELEVENLABS_API_KEY: Optional[str] = None
+    DEEPGRAM_API_KEY: Optional[str] = None
     REDIS_URL: str = "redis://localhost:6379/0"
     
     # Twilio global credentials (system-level fallback if no per-tenant creds set)

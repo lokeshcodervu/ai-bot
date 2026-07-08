@@ -31,7 +31,7 @@ def get_user_from_token(token: str, db: Session) -> Optional[User]:
 @router.websocket("/campaigns/{campaign_id}/ws")
 async def campaign_ws_endpoint(
     websocket: WebSocket,
-    campaign_id: UUID,
+    campaign_id: str,
     token: str = Query(...),
     db: Session = Depends(get_db)
 ):
@@ -55,10 +55,16 @@ async def campaign_ws_endpoint(
         return
         
     # 2. Check campaign existence and isolation
-    campaign = db.query(Campaign).filter(Campaign.id == campaign_id, Campaign.tenant_id == user.tenant_id).first()
-    if not campaign:
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Campaign not found or access denied.")
-        return
+    if campaign_id != "single-call":
+        try:
+            campaign_uuid = UUID(campaign_id)
+        except ValueError:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid campaign ID format.")
+            return
+        campaign = db.query(Campaign).filter(Campaign.id == campaign_uuid, Campaign.tenant_id == user.tenant_id).first()
+        if not campaign:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Campaign not found or access denied.")
+            return
 
     # 3. Subscribe to campaign channel
     channel_name = f"campaign:{campaign_id}"

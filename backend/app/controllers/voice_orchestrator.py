@@ -251,9 +251,9 @@ from app.utils.pubsub import publish_sync
 from app.config.settings import settings
 
 # Load API keys from environment
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY") or os.getenv("OPENAI_API_KEY") # fallback to openai key if same provider or debug
-ELEVENLABS_API_KEY = os.getenv("elevenlabs") or os.getenv("ELEVENLABS_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") or settings.OPENAI_API_KEY
+DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY") or os.getenv("OPENAI_API_KEY") or settings.DEEPGRAM_API_KEY or settings.OPENAI_API_KEY
+ELEVENLABS_API_KEY = os.getenv("elevenlabs") or os.getenv("ELEVENLABS_API_KEY") or settings.ELEVENLABS_API_KEY
 
 def humanize_text(text: str) -> str:
     if not text:
@@ -528,6 +528,8 @@ async def query_gpt4o_dialogue_stream(
                 role = "user" if msg["role"] == "user" else "model"
                 contents.append({"role": role, "parts": [msg["content"]]})
             contents.append({"role": "user", "parts": [llm_user_text]})
+            if contents and contents[0]["role"] == "model":
+                contents.insert(0, {"role": "user", "parts": ["[Call connected]"]})
 
             # Target models/gemini-2.5-flash directly as selected fast model!
             model_name = 'models/gemini-2.5-flash'
@@ -792,6 +794,8 @@ async def query_gpt4o_dialogue(
                 role = "user" if msg["role"] == "user" else "model"
                 contents.append({"role": role, "parts": [msg["content"]]})
             contents.append({"role": "user", "parts": [llm_user_text]})
+            if contents and contents[0]["role"] == "model":
+                contents.insert(0, {"role": "user", "parts": ["[Call connected]"]})
 
             models_to_try = [
                 'models/gemini-3.1-flash-lite',
@@ -1044,8 +1048,8 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
     tenant_id = None
     selected_language = "english"
     
-    elevenlabs_key = os.getenv("elevenlabs") or os.getenv("ELEVENLABS_API_KEY")
-    sarvam_key = os.getenv("SARVAM_AI_KEY")
+    elevenlabs_key = os.getenv("elevenlabs") or os.getenv("ELEVENLABS_API_KEY") or settings.ELEVENLABS_API_KEY
+    sarvam_key = os.getenv("SARVAM_AI_KEY") or settings.SARVAM_AI_KEY
     
     conversation_history = []
     active_tts_tasks = []
@@ -1273,127 +1277,131 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
                         is_final = res.get("is_final", False)
                         
                         if transcript and is_final:
-                            print(f"[STT USER]: {transcript}")
-                            
-                            # Start latency tracking for this turn
-                            latency_tracker.start_turn()
-                            
-                            # Publish transcript updates to Live UI Websockets
-                            publish_sync(f"campaign:{campaign_id}:lead:{lead_id}", {
-                                "speaker": "User",
-                                "text": transcript
-                            })
-                            
-                            # Barge-in interruption handler: Flush Twilio playback buffer immediately
-                            if active_tts_tasks or (tts_client and tts_client.is_connected):
-                                print("[BARGE-IN] User interrupted AI. Flushing Twilio audio buffer and canceling tasks.")
-                                clear_cmd = {"event": "clear", "streamSid": stream_sid}
-                                await twilio_ws.send_json(clear_cmd)
-                                if tts_client:
-                                    await tts_client.flush()
-                                for task in active_tts_tasks:
-                                    if not task.done():
-                                        task.cancel()
-                                active_tts_tasks.clear()
-                            
-                            # 1. Add Response Delay (300-800ms) to simulate human reaction/thinking time
-                            if response_delay_enabled:
-                                import random
-                                delay = (random.random() * 500 + 300) / 1000.0
-                                await asyncio.sleep(delay)
-                            
-                            # 2. STT Acknowledgment Layer: play "hmm okay..." immediately
-                            ack_task = None
-                            if acknowledgment_enabled:
-                                ack_text = "hmm okay..."
-                                ack_task = asyncio.create_task(
-                                    render_tts_and_send_to_twilio(ack_text, voice_id, twilio_ws, stream_sid, tts_provider)
-                                )
-                                active_tts_tasks.append(ack_task)
-                            
-                            # 3. Query GPT-4o dialogue controller and stream response
-                            full_reply = ""
-                            async for text_chunk in query_gpt4o_dialogue_stream(
-                                transcript,
-                                conversation_history,
-                                system_prompt,
-                                tenant_id,
-                                lead_id,
-                                db_session_factory,
-                                cached_openai_tools,
-                                cached_gemini_tools,
-                                latency_tracker
-                            ):
-                                full_reply += text_chunk
+                            try:
+                                print(f"[STT USER]: {transcript}")
                                 
-                                # Clean reply of extra formatting
-                                clean_chunk = text_chunk.replace("**", "").replace("*", "").replace("`", "")
+                                # Start latency tracking for this turn
+                                latency_tracker.start_turn()
+                                
+                                # Publish transcript updates to Live UI Websockets
+                                publish_sync(f"campaign:{campaign_id}:lead:{lead_id}", {
+                                    "speaker": "User",
+                                    "text": transcript
+                                })
+                                
+                                # Barge-in interruption handler: Flush Twilio playback buffer immediately
+                                if active_tts_tasks or (tts_client and tts_client.is_connected):
+                                    print("[BARGE-IN] User interrupted AI. Flushing Twilio audio buffer and canceling tasks.")
+                                    clear_cmd = {"event": "clear", "streamSid": stream_sid}
+                                    await twilio_ws.send_json(clear_cmd)
+                                    if tts_client:
+                                        await tts_client.flush()
+                                    for task in active_tts_tasks:
+                                        if not task.done():
+                                            task.cancel()
+                                    active_tts_tasks.clear()
+                                
+                                # 1. Add Response Delay (300-800ms) to simulate human reaction/thinking time
+                                if response_delay_enabled:
+                                    import random
+                                    delay = (random.random() * 500 + 300) / 1000.0
+                                    await asyncio.sleep(delay)
+                                
+                                # 2. STT Acknowledgment Layer: play "hmm okay..." immediately
+                                ack_task = None
+                                if acknowledgment_enabled:
+                                    ack_text = "hmm okay..."
+                                    ack_task = asyncio.create_task(
+                                        render_tts_and_send_to_twilio(ack_text, voice_id, twilio_ws, stream_sid, tts_provider)
+                                    )
+                                    active_tts_tasks.append(ack_task)
+                                
+                                # 3. Query GPT-4o dialogue controller and stream response
+                                full_reply = ""
+                                async for text_chunk in query_gpt4o_dialogue_stream(
+                                    transcript,
+                                    conversation_history,
+                                    system_prompt,
+                                    tenant_id,
+                                    lead_id,
+                                    db_session_factory,
+                                    cached_openai_tools,
+                                    cached_gemini_tools,
+                                    latency_tracker
+                                ):
+                                    full_reply += text_chunk
+                                    
+                                    # Clean reply of extra formatting
+                                    clean_chunk = text_chunk.replace("**", "").replace("*", "").replace("`", "")
+                                    if tts_client and tts_client.is_connected:
+                                        if tts_provider == "ELEVENLABS":
+                                            await tts_client.el_ws.send(json.dumps({
+                                                "text": clean_chunk,
+                                                "try_trigger_generation": True
+                                            }))
+                                        elif tts_provider == "SARVAM":
+                                            await tts_client.sarvam_ws.send(json.dumps({
+                                                "type": "text",
+                                                "data": {
+                                                    "text": clean_chunk
+                                                }
+                                            }))
+                                        
+                                # Signal persistent client that text stream is completed for this turn
                                 if tts_client and tts_client.is_connected:
                                     if tts_provider == "ELEVENLABS":
                                         await tts_client.el_ws.send(json.dumps({
-                                            "text": clean_chunk,
+                                            "text": " ",
                                             "try_trigger_generation": True
                                         }))
                                     elif tts_provider == "SARVAM":
                                         await tts_client.sarvam_ws.send(json.dumps({
                                             "type": "text",
                                             "data": {
-                                                "text": clean_chunk
+                                                "text": " "
                                             }
                                         }))
                                     
-                            # Signal persistent client that text stream is completed for this turn
-                            if tts_client and tts_client.is_connected:
-                                if tts_provider == "ELEVENLABS":
-                                    await tts_client.el_ws.send(json.dumps({
-                                        "text": " ",
-                                        "try_trigger_generation": True
-                                    }))
-                                elif tts_provider == "SARVAM":
-                                    await tts_client.sarvam_ws.send(json.dumps({
-                                        "type": "text",
-                                        "data": {
-                                            "text": " "
-                                        }
-                                    }))
+                                print(f"[LLM AGENT] Raw reply completed: {full_reply}")
+                                final_reply = full_reply.replace("**", "").replace("*", "").replace("`", "").strip()
+                                print(f"[LLM AGENT] Clean reply: {final_reply}")
                                 
-                            print(f"[LLM AGENT] Raw reply completed: {full_reply}")
-                            final_reply = full_reply.replace("**", "").replace("*", "").replace("`", "").strip()
-                            print(f"[LLM AGENT] Clean reply: {final_reply}")
-                            
-                            # Save history turn
-                            conversation_history.append({"role": "user", "content": transcript})
-                            conversation_history.append({"role": "assistant", "content": final_reply})
-                            
-                            # Publish transcript updates to Live UI
-                            publish_sync(f"campaign:{campaign_id}:lead:{lead_id}", {
-                                "speaker": "AI",
-                                "text": final_reply
-                            })
-                            
-                            # 5. Fallback path: If persistent ElevenLabs is not active, dispatch legacy rendering task
-                            if not tts_client or not tts_client.is_connected:
-                                tts_task = asyncio.create_task(
-                                    render_tts_and_send_to_twilio(
-                                        final_reply, 
-                                        voice_id, 
-                                        twilio_ws, 
-                                        stream_sid, 
-                                        tts_provider, 
-                                        wait_for_task=ack_task
+                                # Save history turn
+                                conversation_history.append({"role": "user", "content": transcript})
+                                conversation_history.append({"role": "assistant", "content": final_reply})
+                                
+                                # Publish transcript updates to Live UI
+                                publish_sync(f"campaign:{campaign_id}:lead:{lead_id}", {
+                                    "speaker": "AI",
+                                    "text": final_reply
+                                })
+                                
+                                # 5. Fallback path: If persistent ElevenLabs is not active, dispatch legacy rendering task
+                                if not tts_client or not tts_client.is_connected:
+                                    tts_task = asyncio.create_task(
+                                        render_tts_and_send_to_twilio(
+                                            final_reply, 
+                                            voice_id, 
+                                            twilio_ws, 
+                                            stream_sid, 
+                                            tts_provider, 
+                                            wait_for_task=ack_task
+                                        )
                                     )
-                                )
-                                active_tts_tasks.append(tts_task)
-                                
-                            # Check if the AI bot decided to close the call due to off-topic turns
-                            is_closure_response = "Lagta hai is samay" in final_reply or "insurance ke baare mein baat" in final_reply
-                            if is_closure_response:
-                                print("[VOICE ORCHESTRATOR] Closure response detected. Bidding farewell and hanging up...")
+                                    active_tts_tasks.append(tts_task)
+                                    
+                                # Check if the AI bot decided to close the call due to off-topic turns
+                                is_closure_response = "Lagta hai is samay" in final_reply or "insurance ke baare mein baat" in final_reply
+                                if is_closure_response:
+                                    print("[VOICE ORCHESTRATOR] Closure response detected. Bidding farewell and hanging up...")
+                                    sys.stdout.flush()
+                                    # Give it 6.5 seconds to speak the farewell audio before closing the websocket to hang up
+                                    await asyncio.sleep(6.5)
+                                    await twilio_ws.close()
+                                    return
+                            except Exception as turn_err:
+                                print(f"[STT TURN ERROR] Exception during dialogue turn for transcript '{transcript}': {str(turn_err)}")
                                 sys.stdout.flush()
-                                # Give it 6.5 seconds to speak the farewell audio before closing the websocket to hang up
-                                await asyncio.sleep(6.5)
-                                await twilio_ws.close()
-                                return
                             
                 except Exception as e:
                     print(f"[STT PROCESSOR] Transcript exception: {str(e)}")
@@ -1421,10 +1429,9 @@ async def render_sarvam_tts_and_send_to_twilio(text: str, voice_id: str, twilio_
     """
     import httpx
     
-    sarvam_key = os.getenv("SARVAM_AI_KEY")
+    sarvam_key = os.getenv("SARVAM_AI_KEY") or settings.SARVAM_AI_KEY
     if not sarvam_key:
-        print("[SARVAM TTS ERROR] SARVAM_AI_KEY is missing from environment.")
-        return
+        raise Exception("SARVAM_AI_KEY is missing from environment.")
         
     url = "https://api.sarvam.ai/text-to-speech"
     headers = {
@@ -1471,60 +1478,58 @@ async def render_sarvam_tts_and_send_to_twilio(text: str, voice_id: str, twilio_
                         }
                     }
                     await twilio_ws.send_json(media_payload)
+                else:
+                    raise Exception("Sarvam API returned empty audios array.")
             else:
-                print(f"[SARVAM TTS ERROR] API returned status {response.status_code}: {response.text}")
+                raise Exception(f"API returned status {response.status_code}: {response.text}")
     except asyncio.CancelledError:
         print("[TTS CANCELLED] Sarvam rendering task cancelled due to barge-in.")
+        raise
     except Exception as e:
         print(f"[SARVAM TTS ERROR] Exception in Sarvam rendering: {str(e)}")
+        raise e
 
 async def render_tts_and_send_to_twilio(text: str, voice_id: str, twilio_ws: WebSocket, stream_sid: str, tts_provider: str = "ELEVENLABS", wait_for_task: asyncio.Task = None):
     """
     Pipes text segments to ElevenLabs or Sarvam AI, reads returned Mu-law audio, 
-    and sends Base64 media packets to Twilio call socket.
+    and sends Base64 media packets to Twilio call socket. Supports automatic provider fallback.
     """
-    elevenlabs_key = os.getenv("elevenlabs") or os.getenv("ELEVENLABS_API_KEY")
-    sarvam_key = os.getenv("SARVAM_AI_KEY")
+    elevenlabs_key = os.getenv("elevenlabs") or os.getenv("ELEVENLABS_API_KEY") or settings.ELEVENLABS_API_KEY
+    sarvam_key = os.getenv("SARVAM_AI_KEY") or settings.SARVAM_AI_KEY
 
     print(f"[TTS CONFIG] active_provider={tts_provider}, selected_voice={voice_id}")
 
-    if (tts_provider == "SARVAM" or (not elevenlabs_key and sarvam_key)) and sarvam_key:
-        await render_sarvam_tts_and_send_to_twilio(text, voice_id, twilio_ws, stream_sid, wait_for_task)
-        return
+    async def try_elevenlabs(v_id):
+        if not elevenlabs_key:
+            raise Exception("ElevenLabs API key is missing.")
+        import websockets
+        effective_voice_id = v_id
+        if not v_id or len(v_id) < 15:
+            effective_voice_id = "AZnzlk1XvdvUeBnXmlld" # Neha (Hindi default)
+            print(f"[ELEVENLABS] Overriding voice '{v_id}' with default Neha '{effective_voice_id}'")
 
-    import websockets
-    
-    el_url = f"wss://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream-input?output_format=ulaw_8000"
-    el_headers = {"xi-api-key": elevenlabs_key or ""}
-    
-    try:
+        el_url = f"wss://api.elevenlabs.io/v1/text-to-speech/{effective_voice_id}/stream-input?output_format=ulaw_8000"
+        el_headers = {"xi-api-key": elevenlabs_key}
+        
         async with websockets.connect(el_url, additional_headers=el_headers) as el_ws:
-            # Send initial ElevenLabs setup configurations with multilingual model support
             await el_ws.send(json.dumps({
                 "text": " ",
                 "model_id": "eleven_multilingual_v2",
                 "voice_settings": {"stability": 0.4, "similarity_boost": 0.6, "style": 0.7},
-                "xi_api_key": elevenlabs_key or ""
+                "xi_api_key": elevenlabs_key
             }))
-            
-            # Send text to ElevenLabs
             await el_ws.send(json.dumps({
                 "text": f"{text} ",
                 "try_trigger_generation": True
             }))
-            
-            # Send empty text to indicate end of transmission for this utterance
             await el_ws.send(json.dumps({
                 "text": ""
             }))
             
-            # Read synthesized audio frames from ElevenLabs
             has_awaited = False
             while True:
                 response = await el_ws.recv()
                 data = json.loads(response)
-                
-                # Extract raw audio
                 audio_base64 = data.get("audio")
                 if audio_base64:
                     if wait_for_task and not has_awaited:
@@ -1534,7 +1539,6 @@ async def render_tts_and_send_to_twilio(text: str, voice_id: str, twilio_ws: Web
                             print(f"[TTS] Preceding task wait failed: {e}")
                         has_awaited = True
                         
-                    # Pipe media payload directly to Twilio
                     media_payload = {
                         "event": "media",
                         "streamSid": stream_sid,
@@ -1543,14 +1547,38 @@ async def render_tts_and_send_to_twilio(text: str, voice_id: str, twilio_ws: Web
                         }
                     }
                     await twilio_ws.send_json(media_payload)
-                    
-                # If transmission complete break
                 if data.get("isFinal", False):
                     break
+
+    # Determine primary rendering provider
+    use_sarvam = (tts_provider == "SARVAM" or (not elevenlabs_key and sarvam_key)) and sarvam_key
+
+    try:
+        if use_sarvam:
+            print("[TTS] Primary attempt: Sarvam AI...")
+            await render_sarvam_tts_and_send_to_twilio(text, voice_id, twilio_ws, stream_sid, wait_for_task)
+        else:
+            print("[TTS] Primary attempt: ElevenLabs...")
+            await try_elevenlabs(voice_id)
     except asyncio.CancelledError:
         print("[TTS CANCELLED] Render task cancelled due to barge-in.")
-    except Exception as e:
-        print(f"[TTS RENDER ERROR] Exception in ElevenLabs pipe: {str(e)}")
+        raise
+    except Exception as primary_err:
+        print(f"[TTS PRIMARY ERROR] {str(primary_err)}")
+        # Initiate automated provider fallback
+        try:
+            if use_sarvam:
+                fallback_voice = "AZnzlk1XvdvUeBnXmlld" # Neha (Hindi default)
+                print(f"[TTS FALLBACK] Falling back to ElevenLabs with voice={fallback_voice}...")
+                await try_elevenlabs(fallback_voice)
+            else:
+                fallback_voice = "ritu"
+                print(f"[TTS FALLBACK] Falling back to Sarvam AI with speaker={fallback_voice}...")
+                await render_sarvam_tts_and_send_to_twilio(text, fallback_voice, twilio_ws, stream_sid, wait_for_task)
+        except asyncio.CancelledError:
+            raise
+        except Exception as fallback_err:
+            print(f"[TTS CRITICAL ERROR] Both primary and fallback TTS pipelines failed. Primary error: {primary_err}. Fallback error: {fallback_err}")
 
 async def save_telephony_call_log(
     db_session_factory,
@@ -1563,11 +1591,40 @@ async def save_telephony_call_log(
     """
     Create a call log with the final dialog history summary.
     """
-    if not conversation_history:
-        return
-        
     db = db_session_factory()
     try:
+        from app.models.lead import Lead, LeadStatus
+        from app.models.campaign import Campaign
+        from app.utils.pubsub import publish_sync
+        
+        lead = db.query(Lead).filter(Lead.id == lead_id).first()
+        
+        if not conversation_history:
+            if lead and lead.status == LeadStatus.CONNECTED:
+                # Reset lead status if stuck in Connected
+                if campaign_id and campaign_id != "single-call":
+                    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+                    if campaign and lead.retry_count < campaign.max_retries:
+                        lead.retry_count += 1
+                        lead.status = LeadStatus.PENDING_QUEUE
+                    else:
+                        lead.status = LeadStatus.NOT_INTERESTED
+                else:
+                    lead.status = LeadStatus.NEEDS_FOLLOW_UP
+                
+                lead.call_disposition = "No Answer"
+                db.commit()
+                
+                # Publish status update
+                pub_campaign_id = "single-call" if campaign_id == "single-call" else campaign_id
+                publish_sync(f"campaign:{pub_campaign_id}", {
+                    "event": "status_update",
+                    "lead_id": str(lead_id),
+                    "status": lead.status,
+                    "disposition": "No Answer"
+                })
+                print(f"[TELEPHONY] Stuck lead status reset to {lead.status} for lead {lead_id}")
+            return
         # Convert list of role/content items to dialog format list
         transcript_data = [
             {"speaker": "User" if turn["role"] == "user" else "AI", "text": turn["content"]}
