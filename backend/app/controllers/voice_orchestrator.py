@@ -611,7 +611,14 @@ async def query_gpt4o_dialogue_stream(
             sys.stdout.flush()
             
     # Fallback to OpenAI streaming
-    client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
+    try:
+        client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
+    except Exception as init_err:
+        print(f"[LLM ERROR] OpenAI client initialization failed: {init_err}")
+        sys.stdout.flush()
+        yield "I am sorry, I am having trouble connecting right now."
+        return
+
     messages = [{"role": "system", "content": augmented_system_prompt}] + conversation_history
     messages.append({"role": "user", "content": llm_user_text})
     
