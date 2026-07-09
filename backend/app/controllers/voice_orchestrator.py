@@ -1522,8 +1522,8 @@ async def render_tts_and_send_to_twilio(text: str, voice_id: str, twilio_ws: Web
         import websockets
         effective_voice_id = v_id
         if not v_id or len(v_id) < 15:
-            effective_voice_id = "AZnzlk1XvdvUeBnXmlld" # Neha (Hindi default)
-            print(f"[ELEVENLABS] Overriding voice '{v_id}' with default Neha '{effective_voice_id}'")
+            effective_voice_id = "cgSgspJ2msm6clMCkdW9" # Jessica (premade default)
+            print(f"[ELEVENLABS] Overriding voice '{v_id}' with default Jessica '{effective_voice_id}'")
 
         el_url = f"wss://api.elevenlabs.io/v1/text-to-speech/{effective_voice_id}/stream-input?output_format=ulaw_8000"
         el_headers = {"xi-api-key": elevenlabs_key}
@@ -1585,7 +1585,7 @@ async def render_tts_and_send_to_twilio(text: str, voice_id: str, twilio_ws: Web
         # Initiate automated provider fallback
         try:
             if use_sarvam:
-                fallback_voice = "AZnzlk1XvdvUeBnXmlld" # Neha (Hindi default)
+                fallback_voice = "cgSgspJ2msm6clMCkdW9" # Jessica (premade default)
                 print(f"[TTS FALLBACK] Falling back to ElevenLabs with voice={fallback_voice}...")
                 await try_elevenlabs(fallback_voice)
             else:
