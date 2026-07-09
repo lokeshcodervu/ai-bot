@@ -112,7 +112,8 @@ class PersistentElevenLabsTTS:
                     await asyncio.sleep(0.05)
                     continue
                 
-                async for response in self.el_ws:
+                current_ws = self.el_ws
+                async for response in current_ws:
                     data = json.loads(response)
                     audio_base64 = data.get("audio")
                     if audio_base64:
@@ -131,8 +132,10 @@ class PersistentElevenLabsTTS:
             except Exception as e:
                 print(f"[PERSISTENT TTS LISTEN LOOP ERROR/CLOSE]: {e}")
                 sys.stdout.flush()
-                self.is_connected = False
-                self.el_ws = None
+                async with self._lock:
+                    if self.el_ws == current_ws:
+                        self.is_connected = False
+                        self.el_ws = None
                 await asyncio.sleep(0.1)
 
 class PersistentSarvamTTS:
@@ -203,7 +206,8 @@ class PersistentSarvamTTS:
                     await asyncio.sleep(0.05)
                     continue
                 
-                async for response in self.sarvam_ws:
+                current_ws = self.sarvam_ws
+                async for response in current_ws:
                     data = json.loads(response)
                     msg_type = data.get("type")
                     if msg_type == "audio":
@@ -224,8 +228,10 @@ class PersistentSarvamTTS:
             except Exception as e:
                 print(f"[PERSISTENT SARVAM LISTEN LOOP ERROR/CLOSE]: {e}")
                 sys.stdout.flush()
-                self.is_connected = False
-                self.sarvam_ws = None
+                async with self._lock:
+                    if self.sarvam_ws == current_ws:
+                        self.is_connected = False
+                        self.sarvam_ws = None
                 await asyncio.sleep(0.1)
 
 # Reconfigure stdout/stderr to support Unicode characters in Windows consoles
@@ -921,7 +927,9 @@ def is_valid_name(name: str) -> bool:
         "a", "an", "the", "helpful", "professional", "assistant", "advisor", "bot", 
         "representative", "sales", "support", "agent", "virtual", "ai", "speaking", 
         "calling", "sure", "here", "there", "someone", "somebody", "admissions",
-        "real", "estate", "healthcare", "finance", "ecommerce", "insurance", "services"
+        "real", "estate", "healthcare", "finance", "ecommerce", "insurance", "services",
+        "language", "rule", "rules", "instruction", "instructions", "guideline", "guidelines",
+        "context", "mode", "prompt", "system", "status", "conversational"
     }
     for word in words:
         if word.lower() in stopwords:
@@ -1246,6 +1254,9 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
                             "text": greeting + " "
                         }
                     }))
+                    await tts_client.sarvam_ws.send(json.dumps({
+                        "type": "flush"
+                    }))
             else:
                 tts_task = asyncio.create_task(render_tts_and_send_to_twilio(greeting, voice_id, twilio_ws, stream_sid, tts_provider))
                 active_tts_tasks.append(tts_task)
@@ -1318,6 +1329,15 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
                                 
                                 # 3. Query GPT-4o dialogue controller and stream response
                                 full_reply = ""
+                                if tts_client and tts_client.connect_task and not tts_client.connect_task.done():
+                                    try:
+                                        print("[TTS] Waiting for persistent client to reconnect...")
+                                        sys.stdout.flush()
+                                        await asyncio.wait_for(tts_client.connect_task, timeout=1.0)
+                                    except Exception as ce:
+                                        print(f"[TTS ERROR] Wait for reconnect failed: {ce}")
+                                        sys.stdout.flush()
+
                                 async for text_chunk in query_gpt4o_dialogue_stream(
                                     transcript,
                                     conversation_history,
@@ -1356,10 +1376,7 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
                                         }))
                                     elif tts_provider == "SARVAM":
                                         await tts_client.sarvam_ws.send(json.dumps({
-                                            "type": "text",
-                                            "data": {
-                                                "text": " "
-                                            }
+                                            "type": "flush"
                                         }))
                                     
                                 print(f"[LLM AGENT] Raw reply completed: {full_reply}")
