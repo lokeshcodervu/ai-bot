@@ -1,5 +1,6 @@
 # controllers/tenant_controller.py
 
+import sys
 from uuid import UUID
 import uuid
 from sqlalchemy.orm import Session
@@ -9,6 +10,27 @@ from app.models.tenant_usage import TenantUsage
 from app.models.document import Document
 from app.models.embedding_log import EmbeddingLog
 from app.schemas.tenant_schema import TenantCreate, TenantUpdate
+
+# Safe print to prevent UnicodeEncodeError on Windows consoles when logging unicode characters
+_original_print = print
+def safe_print(*args, **kwargs):
+    new_args = []
+    encoding = getattr(sys.stdout, 'encoding', 'utf-8') or 'utf-8'
+    for arg in args:
+        if isinstance(arg, str):
+            try:
+                arg.encode(encoding)
+                new_args.append(arg)
+            except UnicodeEncodeError:
+                new_args.append(arg.encode(encoding, errors='replace').decode(encoding))
+        else:
+            new_args.append(arg)
+    try:
+        _original_print(*new_args, **kwargs)
+    except Exception:
+        pass
+
+print = safe_print
 
 def get_tenant_by_id(db: Session, tenant_id: UUID):
     """Fetch tenant by ID."""

@@ -14,6 +14,27 @@ import websockets
 import openai
 import pinecone
 
+# Safe print to prevent UnicodeEncodeError on Windows consoles when logging unicode characters
+_original_print = print
+def safe_print(*args, **kwargs):
+    new_args = []
+    encoding = getattr(sys.stdout, 'encoding', 'utf-8') or 'utf-8'
+    for arg in args:
+        if isinstance(arg, str):
+            try:
+                arg.encode(encoding)
+                new_args.append(arg)
+            except UnicodeEncodeError:
+                new_args.append(arg.encode(encoding, errors='replace').decode(encoding))
+        else:
+            new_args.append(arg)
+    try:
+        _original_print(*new_args, **kwargs)
+    except Exception:
+        pass
+
+print = safe_print
+
 class CallTurnLatencyTracker:
     def __init__(self):
         self.stt_finalized_time = 0.0
