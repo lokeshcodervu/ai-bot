@@ -106,15 +106,19 @@ class PersistentElevenLabsTTS:
                 self.el_ws = None
 
     async def close(self):
+        ws_to_close = None
         async with self._lock:
             if self.el_ws:
-                try:
-                    await self.el_ws.send(json.dumps({"text": ""}))
-                    await self.el_ws.close()
-                except Exception:
-                    pass
+                ws_to_close = self.el_ws
+                self.el_ws = None
             self.is_connected = False
-            self.el_ws = None
+
+        if ws_to_close:
+            try:
+                await ws_to_close.send(json.dumps({"text": ""}))
+                await asyncio.wait_for(ws_to_close.close(), timeout=1.0)
+            except Exception:
+                pass
 
     async def flush(self):
         print("[PERSISTENT TTS] Flushing ElevenLabs session due to user interruption...")
@@ -203,14 +207,18 @@ class PersistentSarvamTTS:
                 self.sarvam_ws = None
 
     async def close(self):
+        ws_to_close = None
         async with self._lock:
             if self.sarvam_ws:
-                try:
-                    await self.sarvam_ws.close()
-                except Exception:
-                    pass
+                ws_to_close = self.sarvam_ws
+                self.sarvam_ws = None
             self.is_connected = False
-            self.sarvam_ws = None
+
+        if ws_to_close:
+            try:
+                await asyncio.wait_for(ws_to_close.close(), timeout=1.0)
+            except Exception:
+                pass
 
     async def flush(self):
         print("[PERSISTENT SARVAM] Flushing due to barge-in...")
