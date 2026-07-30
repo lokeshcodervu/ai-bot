@@ -584,7 +584,7 @@ async def query_gpt4o_dialogue_stream(
                 response = await asyncio.to_thread(
                     model.generate_content,
                     current_contents,
-                    generation_config={"temperature": 0.7},
+                    generation_config={"temperature": 0.2},
                     stream=True
                 )
                 
@@ -866,7 +866,7 @@ async def query_gpt4o_dialogue(
                         response = await asyncio.to_thread(
                             model.generate_content,
                             current_contents,
-                            generation_config={"temperature": 0.7}
+                            generation_config={"temperature": 0.2}
                         )
                         
                         if response.candidates and response.candidates[0].content.parts:
@@ -1180,14 +1180,7 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
         if tenant and tenant.settings and "default_language" in tenant.settings:
             selected_language = tenant.settings["default_language"]
             
-        # Inject dynamic language rules
-        if selected_language == "auto":
-            system_prompt += "\n\n[LANGUAGE RULE]: Conversational Language: Dynamic Multilingual (Hindi/English). You must dynamically detect the language of the user's query. If the user speaks or asks in Hindi or Hinglish, you must respond in Hindi/Hinglish (using Devanagari script or Hinglish script as preferred by the user). If the user speaks or asks in English, you must respond in English. Do not mix languages in a single sentence unless the user does so (speak in pure natural Hindi or pure natural English depending on their input)."
-        elif selected_language == "hindi":
-            system_prompt += "\n\n[LANGUAGE RULE]: Conversational Language: Hindi. You must speak in natural Hindi (using Devanagari script or Hinglish as preferred by the user). Answer queries in Hindi only."
-        else:
-            system_prompt += "\n\n[LANGUAGE RULE]: Conversational Language: English. You must speak in clear English. Answer queries in English only."
-
+        industry_type = tenant.industry if (tenant and tenant.industry) else "Insurance"
         voice_id = tenant.voice_id if (tenant and tenant.voice_id) else "cgSgspJ2msm6clMCkdW9" # Jessica default
         tts_provider = tenant.settings.get("tts_provider", "ELEVENLABS") if (tenant and tenant.settings and isinstance(tenant.settings, dict)) else "ELEVENLABS"
         acknowledgment_enabled = tenant.settings.get("acknowledgment_enabled", False) if (tenant and tenant.settings and isinstance(tenant.settings, dict)) else False
@@ -1214,24 +1207,14 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
     if agent_name == "AI":
         agent_name = "Neha" if is_female else "Rohan"
 
-    gender_instruction = (
-        "You are a FEMALE agent. When speaking in Hindi or Hinglish, you MUST ALWAYS use female grammar endings (verbs/adjectives like 'bol rahi hoon', 'kar rahi hoon', 'ho sakti hai', 'de sakti hoon', 'bataungi', 'bata sakti hoon', 'jaungi', 'paungi'). NEVER use male endings like 'raha', 'sakta', 'karunga', 'paunga', 'bataunga'."
-        if is_female else
-        "You are a MALE agent. When speaking in Hindi or Hinglish, you MUST ALWAYS use male grammar endings (verbs/adjectives like 'bol raha hoon', 'kar raha hoon', 'ho sakta hai', 'de sakta hoon', 'bataunga', 'bata sakta hoon', 'jaunga', 'paunga'). NEVER use female endings like 'rahi', 'sakti', 'karungi', 'paungi', 'bataungi'."
-    )
-    
-    system_prompt += (
-        f"\n\n[CRITICAL CONVERSATIONAL RULES]:\n"
-        f"1. Agent Identity: Your name is {agent_name}. {gender_instruction}\n"
-        f"2. Length Constraint: ALWAYS reply in 1-2 short lines maximum. Keep answers simple, natural, and highly conversational. NEVER give long explanations, paragraphs, or details unless explicitly asked by the user.\n"
-        f"3. Structure: NEVER use bullet points, list numbers, asterisks, bolding, or markdown formatting in your response. Speak in natural continuous sentences.\n"
-        f"4. Tone: Be friendly, polite, and human-like. Sound like a real person, not a textbook or a teacher.\n"
-        f"5. Language & Hinglish: If the user speaks/asks in Hindi or Hinglish, respond in natural, friendly Hinglish (a mix of Hindi and simple English words, written in Latin script or Devanagari script matching the user's script). Use everyday conversational terms.\n"
-        f"6. Flow: Keep the conversation going by asking a single short, natural follow-up question at the end of your response.\n"
-        f"7. STRICT TOPIC FOCUS: You are strictly an Insurance Sales Voice Agent, NOT a general AI assistant. You must ONLY discuss Health/Accident Insurance, Policy Benefits, Premium, Claims, Coverage, and Eligibility. If the user asks about anything unrelated (such as travel routes, maps, weather, politics, sports, religion, general knowledge, locations, Indore-Ujjain etc.):\n"
-        f"   - DO NOT answer the question. Never provide general knowledge answers or use your own world knowledge.\n"
-        f"   - Instead, on the first off-topic turn say EXACTLY: 'Sorry, I can only help with insurance-related questions. If you have any questions about our insurance plans, I\'d be happy to assist.' (or its friendly Hinglish equivalent: 'Sorry, main sirf insurance se related questions ke liye help kar sakti hoon. Agar aapko hamare insurance plans ke baare mein koi sawal hai, toh mujhe khushi hogi help karne mein.')\n"
-        f"   - On the second or subsequent consecutive off-topic turn, say EXACTLY: 'Lagta hai is samay aap insurance ke baare mein baat nahi karna chahte. Koi baat nahi, aapka samay dene ke liye dhanyavaad. Aapka din shubh ho.' and nothing else."
+    # Assemble complete system instruction using centralized prompts module
+    from app.prompts import build_full_orchestrator_prompt
+    system_prompt = build_full_orchestrator_prompt(
+        base_system_prompt=system_prompt,
+        selected_language=selected_language,
+        agent_name=agent_name,
+        is_female=is_female,
+        industry=industry_type
     )
 
     # 3. Establish Deepgram STT websocket client

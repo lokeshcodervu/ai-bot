@@ -55,6 +55,7 @@ interface AppState {
   wallet: { balance: number } | null;
   activeCampaignId: string | null;
   currentTab: string;
+  initStoreFromStorage: () => void;
   setToken: (token: string | null) => void;
   setUser: (user: any) => void;
   setTenant: (tenant: Partial<Tenant>) => void;
@@ -69,35 +70,62 @@ interface AppState {
 }
 
 export const useStore = create<AppState>((set) => ({
-  token: typeof window !== 'undefined' ? localStorage.getItem('token') : null,
-  user: typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('user') || 'null') : null,
-  tenant: typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('tenant') || 'null') : null,
+  token: null,
+  user: null,
+  tenant: null,
   leads: [],
   campaigns: [
-    { id: 'c1', name: 'Q3 React Bootcamp', status: 'RUNNING', description: 'Book demos for Sep cohort', leadsCount: 240, completedCalls: 148, concurrencyLimit: 2, callsCount: 482, convertedCount: 38 },
-    { id: 'c2', name: 'Python Admission', status: 'COMPLETED', description: 'Qualify warm leads', leadsCount: 180, completedCalls: 180, concurrencyLimit: 3, callsCount: 612, convertedCount: 51 },
-    { id: 'c3', name: 'Data Science Outreach', status: 'PAUSED', description: 'Cold outreach', leadsCount: 80, completedCalls: 0, concurrencyLimit: 2, callsCount: 0, convertedCount: 0 },
-    { id: 'c4', name: 'Mern Stack Cohort', status: 'RUNNING', description: 'Drive enrolments', leadsCount: 320, completedCalls: 48, concurrencyLimit: 2, callsCount: 156, convertedCount: 12 },
-    { id: 'c5', name: 'UI/UX Masterclass', status: 'RUNNING', description: 'Webinar signups', leadsCount: 145, completedCalls: 87, concurrencyLimit: 2, callsCount: 388, convertedCount: 27 },
+    { id: 'c1', name: 'Q3 Health Renewal', status: 'RUNNING', description: 'Policy renewal outreach', leadsCount: 240, completedCalls: 148, concurrencyLimit: 2, callsCount: 482, convertedCount: 38 },
+    { id: 'c2', name: 'Senior Citizen Rider', status: 'COMPLETED', description: 'Qualify warm leads', leadsCount: 180, completedCalls: 180, concurrencyLimit: 3, callsCount: 612, convertedCount: 51 },
+    { id: 'c3', name: 'Motor Insurance Lead Dial', status: 'PAUSED', description: 'Outbound campaign', leadsCount: 80, completedCalls: 0, concurrencyLimit: 2, callsCount: 0, convertedCount: 0 },
   ],
   callLogs: [
     {
       id: 'l1',
-      leadName: 'John Doe',
-      phoneNumber: '+1234567890',
+      leadName: 'Rahul Sharma',
+      phoneNumber: '+91 98124 56789',
       status: 'Connected',
-      duration: 45,
-      summary: 'Asked about cohort timings and batch options. Prefers weekend slots.',
+      duration: 134,
+      summary: 'Inquired about senior citizen rider waiting period. Locked 10% renewal bonus.',
       transcript: [
-        { speaker: 'AI', text: 'Hello! I am Rohan from SecureLife. How can I help you today?' },
-        { speaker: 'User', text: 'Hi, I saw your React Bootcamp post. What is the fee?' },
-        { speaker: 'AI', text: 'The fees for our cohort plans are structured transparently. Let me load the course syllabus details for you.' }
+        { speaker: 'AI', text: 'Hello Mr. Sharma, this is Priya calling from Star Health Insurance.' },
+        { speaker: 'User', text: 'Hi, what is the renewal offer?' },
+        { speaker: 'AI', text: 'Your Family Health Optima policy renewal bonus is active with a 10% discount.' }
       ]
     }
   ],
-  wallet: { balance: 145.50 },
+  wallet: { balance: 240.50 },
   activeCampaignId: null,
   currentTab: 'overview',
+
+  initStoreFromStorage: () => {
+    if (typeof window !== 'undefined') {
+      try {
+        const storedToken = localStorage.getItem('token');
+        const storedUser = localStorage.getItem('user');
+        const storedTenant = localStorage.getItem('tenant');
+        
+        let parsedUser = null;
+        let parsedTenant = null;
+
+        if (storedUser && storedUser !== 'undefined' && storedUser !== 'null') {
+          parsedUser = JSON.parse(storedUser);
+        }
+        if (storedTenant && storedTenant !== 'undefined' && storedTenant !== 'null') {
+          parsedTenant = JSON.parse(storedTenant);
+        }
+
+        set({
+          token: storedToken,
+          user: parsedUser,
+          tenant: parsedTenant
+        });
+      } catch (err) {
+        console.error('Safely caught storage parse error:', err);
+      }
+    }
+  },
+
   setToken: (token) => {
     if (typeof window !== 'undefined') {
       if (token) localStorage.setItem('token', token);
@@ -115,11 +143,11 @@ export const useStore = create<AppState>((set) => ({
   setTenant: (tenantUpdates) => set((state) => {
     const updatedTenant = state.tenant ? { ...state.tenant, ...tenantUpdates } as Tenant : {
       id: 'tenant-1',
-      companyName: 'SecureLife Inc',
-      website: 'https://securelife.com',
+      companyName: 'Star Health Insurance',
+      website: 'https://starhealth.in',
       timezone: 'Asia/Kolkata',
-      voiceId: '21m00Tcm4TlvDq8ikWAM',
-      systemPrompt: 'You are Rohan, a helpful insurance coordinator answering inquiries.',
+      voiceId: 'sarvam_hindi_female_1',
+      systemPrompt: 'You are Priya, a helpful insurance coordinator answering inquiries.',
       systemPromptVersion: 1,
       isAiReady: true,
       ...tenantUpdates

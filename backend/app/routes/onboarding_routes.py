@@ -248,23 +248,9 @@ def select_industry(request_in: SelectIndustryRequest, db: Session = Depends(get
             detail="Email already registered"
         )
         
-    # Baseline prompt mapping
-    INDUSTRY_PROMPTS = {
-        "IT Training": "You are a professional sales assistant for an IT Training company. Answer questions about course curriculums, pricing, and scheduling.",
-        "Real Estate": "You are a professional real estate sales assistant. Answer questions about property listings, pricing, and scheduling viewings.",
-        "Healthcare": "You are a professional healthcare assistant. Assist with appointment scheduling and answering general service questions.",
-        "Finance": "You are a professional financial services assistant. Assist with product inquiries and consultation scheduling.",
-        "E-commerce": "You are a professional e-commerce sales assistant. Assist with product details, order statuses, and support.",
-        "Insurance": (
-            "You are a friendly and human-like insurance sales assistant. "
-            "Always reply in 1-2 short lines maximum. Keep answers simple, natural, and conversational in Hinglish. "
-            "Sound helpful, not like a teacher or textbook. Ask small follow-up questions to continue the conversation."
-        ),
-    }
-    
-    baseline_prompt = "You are a helpful AI sales assistant."
-    if request_in.industry in INDUSTRY_PROMPTS:
-        baseline_prompt = INDUSTRY_PROMPTS[request_in.industry]
+    # Baseline prompt mapping from centralized prompts module
+    from app.prompts import get_industry_baseline_prompt
+    baseline_prompt = get_industry_baseline_prompt(request_in.industry)
         
     # Create Tenant via controller (this auto-creates Wallet and TenantUsage)
     tenant_create_data = TenantCreate(

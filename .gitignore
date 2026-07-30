@@ -1,0 +1,30 @@
+# Environment variables
+.env
+.env.*
+.env.local
+
+# Node modules
+node_modules/
+
+# Presentation files & extraneous folders
+CoderVu_SalesAI_Complete_Presentation*
+[Tt]ele-[Bb]ot*
+[Tt]ele-[Bb]ot-AI*
+Tele-Bot-AI 2/
+
+# Python / Cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Databases
+*.db
+*.sqlite3
+
+# Uploads and scratch
+uploads/
+scratch/
+
+# IDEs
+.vscode/
+.idea/

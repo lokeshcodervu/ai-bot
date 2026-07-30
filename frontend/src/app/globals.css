@@ -1,42 +1,40 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
   --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-outfit: 'Outfit', sans-serif;
-  --background: #f8fafc;
+  --font-display: 'Oswald', 'Outfit', sans-serif;
+  --background: #ffffff;
   --foreground: #0f172a;
-  --card: #ffffff;
-  --card-foreground: #0f172a;
-  --primary: #2563eb;
+  --primary: #f59e0b;
+  --primary-dark: #d97706;
   --primary-foreground: #ffffff;
-  --secondary: #64748b;
-  --muted: #f1f5f9;
-  --border: #e2e8f0;
+  --secondary: #0d9488;
+  --muted: #f8f9fa;
+  --border: #e5e7eb;
 }
 
 body {
   font-family: var(--font-sans);
-  background-color: var(--background);
-  color: var(--foreground);
-  overflow-x: hidden;
-}
-
-h1, h2, h3, h4, h5, h6 {
-  font-family: var(--font-outfit);
+  background-color: #ffffff;
   color: #0f172a;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Custom scrollbars */
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+}
+
+/* Custom crisp scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background: #f8f9fa;
 }
 ::-webkit-scrollbar-thumb {
   background: #cbd5e1;
@@ -44,17 +42,4 @@ h1, h2, h3, h4, h5, h6 {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
-}
-
-/* Smooth drag and drop states */
-.kanban-column {
-  transition: background-color 0.2s ease, border-color 0.2s ease;
-}
-
-.kanban-card {
-  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease;
-}
-.kanban-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
 }
