@@ -164,10 +164,11 @@ class PersistentElevenLabsTTS:
                 await asyncio.sleep(0.1)
 
 class PersistentSarvamTTS:
-    def __init__(self, voice_id: str, sarvam_key: str, latency_tracker: CallTurnLatencyTracker = None):
+    def __init__(self, voice_id: str, sarvam_key: str, latency_tracker: CallTurnLatencyTracker = None, is_female: bool = True):
         self.voice_id = voice_id
         self.sarvam_key = sarvam_key
         self.latency_tracker = latency_tracker
+        self.is_female = is_female
         self.sarvam_ws = None
         self.current_stream_sid = None
         self.twilio_ws = None
@@ -185,7 +186,7 @@ class PersistentSarvamTTS:
             }
             try:
                 self.sarvam_ws = await websockets.connect(url, additional_headers=headers)
-                speaker = map_to_sarvam_speaker(self.voice_id)
+                speaker = map_to_sarvam_speaker(self.voice_id, self.is_female)
                 # Send config message immediately
                 await self.sarvam_ws.send(json.dumps({
                     "type": "config",
@@ -198,7 +199,7 @@ class PersistentSarvamTTS:
                     }
                 }))
                 self.is_connected = True
-                print("[PERSISTENT SARVAM] Connected and configured successfully.")
+                print(f"[PERSISTENT SARVAM] Connected successfully with speaker '{speaker}' (is_female={self.is_female}).")
                 sys.stdout.flush()
             except Exception as e:
                 print(f"[PERSISTENT SARVAM ERROR] Connection failed: {e}")
@@ -313,7 +314,7 @@ def add_filler(text: str) -> str:
             return f"{filler} {text}"
     return text
 
-def map_to_sarvam_speaker(voice_id: str) -> str:
+def map_to_sarvam_speaker(voice_id: str, is_female: bool = True) -> str:
     supported = {
         "aditya", "ritu", "ashutosh", "priya", "neha", "rahul", "pooja", "rohan",
         "simran", "kavya", "amit", "dev", "ishita", "shreya", "ratan", "varun",
@@ -338,9 +339,17 @@ def map_to_sarvam_speaker(voice_id: str) -> str:
         "rachel": "ritu",
         "bella": "shreya",
         "jessica": "neha",
-        "antoni": "shubh"
+        "antoni": "shubh",
+        "cgsgspj2msm6clmckdw9": "neha",
+        "21m00tcm4tlvdq8ikwam": "ritu",
+        "aznzlk1xvdevuebnxmlld": "neha",
+        "exavitqu4vr4xnsdxmal": "shreya",
+        "erxwobayin019pkysvjv": "shubh"
     }
-    return mappings.get(voice_lower, "aditya")
+    if voice_lower in mappings:
+        return mappings[voice_lower]
+
+    return "neha" if is_female else "aditya"
 
 async def search_knowledge_base(query: str, tenant_id: str) -> str:
     """
@@ -566,8 +575,8 @@ async def query_gpt4o_dialogue_stream(
             if contents and contents[0]["role"] == "model":
                 contents.insert(0, {"role": "user", "parts": ["[Call connected]"]})
 
-            # Target models/gemini-2.5-flash directly as selected fast model!
-            model_name = 'models/gemini-2.5-flash'
+            # Target models/gemini-flash-latest directly as reliable fast model
+            model_name = 'models/gemini-flash-latest'
             
             model_kwargs = {
                 "model_name": model_name,
@@ -840,13 +849,9 @@ async def query_gpt4o_dialogue(
                 contents.insert(0, {"role": "user", "parts": ["[Call connected]"]})
 
             models_to_try = [
-                'models/gemini-3.1-flash-lite',
-                'models/gemini-3-flash-preview',
-                'models/gemini-2.5-flash',
+                'models/gemini-flash-latest',
                 'models/gemini-2.0-flash',
-                'models/gemini-2.5-flash-lite',
-                'models/gemini-2.0-flash-lite',
-                'models/gemini-3.5-flash'
+                'models/gemini-2.0-flash-lite'
             ]
             
             for model_name in models_to_try:
@@ -1191,21 +1196,21 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
     # Initialize latency tracker
     latency_tracker = CallTurnLatencyTracker()
 
-    # Establish persistent TTS client if enabled
-    tts_client = None
-    if tts_provider == "ELEVENLABS" and elevenlabs_key:
-        tts_client = PersistentElevenLabsTTS(voice_id, elevenlabs_key, latency_tracker)
-        await tts_client.connect()
-    elif tts_provider == "SARVAM" and sarvam_key:
-        tts_client = PersistentSarvamTTS(voice_id, sarvam_key, latency_tracker)
-        await tts_client.connect()
-
     agent_name = extract_agent_name(system_prompt)
     is_female = is_female_agent(agent_name, voice_id, system_prompt)
     
     # If no name was found in system prompt, assign a natural fallback name based on gender
     if agent_name == "AI":
         agent_name = "Neha" if is_female else "Rohan"
+
+    # Establish persistent TTS client if enabled
+    tts_client = None
+    if tts_provider == "ELEVENLABS" and elevenlabs_key:
+        tts_client = PersistentElevenLabsTTS(voice_id, elevenlabs_key, latency_tracker)
+        await tts_client.connect()
+    elif tts_provider == "SARVAM" and sarvam_key:
+        tts_client = PersistentSarvamTTS(voice_id, sarvam_key, latency_tracker, is_female)
+        await tts_client.connect()
 
     # Assemble complete system instruction using centralized prompts module
     from app.prompts import build_full_orchestrator_prompt
