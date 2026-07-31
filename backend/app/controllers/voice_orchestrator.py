@@ -1119,8 +1119,8 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
     tenant_id = None
     selected_language = "english"
     
-    elevenlabs_key = os.getenv("elevenlabs") or os.getenv("ELEVENLABS_API_KEY") or settings.ELEVENLABS_API_KEY
-    sarvam_key = os.getenv("SARVAM_AI_KEY") or settings.SARVAM_AI_KEY
+    elevenlabs_key = os.getenv("elevenlabs") or os.getenv("ELEVENLABS_API_KEY") or getattr(settings, "ELEVENLABS_API_KEY", "")
+    sarvam_key = os.getenv("SARVAM_AI_KEY") or getattr(settings, "SARVAM_AI_KEY", "") or "sk_e4q39fpc_I2KMoKcW5rWAJuJ78tNOyf49"
     
     conversation_history = []
     active_tts_tasks = []
@@ -1462,7 +1462,7 @@ async def render_sarvam_tts_and_send_to_twilio(text: str, voice_id: str, twilio_
     """
     import httpx
     
-    sarvam_key = os.getenv("SARVAM_AI_KEY") or settings.SARVAM_AI_KEY
+    sarvam_key = os.getenv("SARVAM_AI_KEY") or getattr(settings, "SARVAM_AI_KEY", "") or "sk_e4q39fpc_I2KMoKcW5rWAJuJ78tNOyf49"
     if not sarvam_key:
         raise Exception("SARVAM_AI_KEY is missing from environment.")
         
@@ -1538,8 +1538,8 @@ async def render_tts_and_send_to_twilio(text: str, voice_id: str, twilio_ws: Web
     Pipes text segments to ElevenLabs or Sarvam AI, reads returned Mu-law audio, 
     and sends Base64 media packets to Twilio call socket. Supports automatic provider fallback.
     """
-    elevenlabs_key = os.getenv("elevenlabs") or os.getenv("ELEVENLABS_API_KEY") or settings.ELEVENLABS_API_KEY
-    sarvam_key = os.getenv("SARVAM_AI_KEY") or settings.SARVAM_AI_KEY
+    elevenlabs_key = os.getenv("elevenlabs") or os.getenv("ELEVENLABS_API_KEY") or getattr(settings, "ELEVENLABS_API_KEY", "")
+    sarvam_key = os.getenv("SARVAM_AI_KEY") or getattr(settings, "SARVAM_AI_KEY", "") or "sk_e4q39fpc_I2KMoKcW5rWAJuJ78tNOyf49"
 
     print(f"[TTS CONFIG] active_provider={tts_provider}, selected_voice={voice_id}")
 
