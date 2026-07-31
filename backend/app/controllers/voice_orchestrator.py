@@ -164,11 +164,12 @@ class PersistentElevenLabsTTS:
                 await asyncio.sleep(0.1)
 
 class PersistentSarvamTTS:
-    def __init__(self, voice_id: str, sarvam_key: str, latency_tracker: CallTurnLatencyTracker = None, is_female: bool = True):
+    def __init__(self, voice_id: str, sarvam_key: str, latency_tracker: CallTurnLatencyTracker = None, is_female: bool = True, pace: float = 1.2):
         self.voice_id = voice_id
         self.sarvam_key = sarvam_key
         self.latency_tracker = latency_tracker
         self.is_female = is_female
+        self.pace = pace
         self.sarvam_ws = None
         self.current_stream_sid = None
         self.twilio_ws = None
@@ -187,7 +188,7 @@ class PersistentSarvamTTS:
             try:
                 self.sarvam_ws = await websockets.connect(url, additional_headers=headers)
                 speaker = map_to_sarvam_speaker(self.voice_id, self.is_female)
-                # Send config message immediately
+                # Send config message immediately with fast speaking pace (1.2x)
                 await self.sarvam_ws.send(json.dumps({
                     "type": "config",
                     "data": {
@@ -195,7 +196,8 @@ class PersistentSarvamTTS:
                         "speaker": speaker,
                         "model": "bulbul:v3",
                         "speech_sample_rate": 8000,
-                        "output_audio_codec": "mulaw"
+                        "output_audio_codec": "mulaw",
+                        "pace": self.pace
                     }
                 }))
                 self.is_connected = True
@@ -548,7 +550,13 @@ async def query_gpt4o_dialogue_stream(
 
     augmented_system_prompt = base_prompt
     if rag_context:
-        augmented_system_prompt += f"\n\n[RELEVANT KNOWLEDGE BASE CONTEXT]:\n{rag_context}\n\nEnforce rules: Use only facts from this context to answer questions. If not present, state that a senior advisor will call back with details."
+        augmented_system_prompt += (
+            f"\n\n[STRICT TENANT KNOWLEDGE BASE CONTEXT]:\n{rag_context}\n\n"
+            f"[CRITICAL MULTI-TENANT BOUNDARY LOCK]:\n"
+            f"You represent ONLY this registered tenant company. You MUST answer strictly using facts explicitly present in the above context. "
+            f"NEVER mention, recommend, or invent policy prices, plans, or insurance types from other companies or external knowledge. "
+            f"If a specific detail or price is NOT present in the context above, state politely that a senior advisor will share full details on a callback."
+        )
         
     if rules_text:
         augmented_system_prompt += rules_text
@@ -575,75 +583,83 @@ async def query_gpt4o_dialogue_stream(
             if contents and contents[0]["role"] == "model":
                 contents.insert(0, {"role": "user", "parts": ["[Call connected]"]})
 
-            # Target models/gemini-flash-latest directly as reliable fast model
-            model_name = 'models/gemini-flash-latest'
+            models_to_try = ['models/gemini-2.0-flash', 'models/gemini-flash-latest', 'models/gemini-1.5-flash', 'models/gemini-2.0-flash-lite']
+            gemini_success = False
             
-            model_kwargs = {
-                "model_name": model_name,
-                "system_instruction": augmented_system_prompt
-            }
-            if cached_gemini_tools:
-                model_kwargs["tools"] = cached_gemini_tools
-                
-            model = genai.GenerativeModel(**model_kwargs)
-            current_contents = list(contents)
-            
-            max_gemini_turns = 3
-            for g_turn in range(max_gemini_turns):
-                response = await asyncio.to_thread(
-                    model.generate_content,
-                    current_contents,
-                    generation_config={"temperature": 0.2},
-                    stream=True
-                )
-                
-                is_tool_call = False
-                tool_name = None
-                tool_args = {}
-                
-                iterator = iter(response)
-                while True:
-                    chunk = await asyncio.to_thread(next, iterator, None)
-                    if chunk is None:
-                        break
-                    
-                    if chunk.candidates and chunk.candidates[0].content.parts:
-                        part = chunk.candidates[0].content.parts[0]
+            for model_name in models_to_try:
+                try:
+                    model_kwargs = {
+                        "model_name": model_name,
+                        "system_instruction": augmented_system_prompt
+                    }
+                    if cached_gemini_tools:
+                        model_kwargs["tools"] = cached_gemini_tools
                         
-                        # Check for function call
-                        if hasattr(part, "function_call") and part.function_call and part.function_call.name:
-                            is_tool_call = True
-                            tool_name = part.function_call.name
-                            tool_args = dict(part.function_call.args)
-                            break
-                        elif hasattr(part, "text") and part.text:
-                            if latency_tracker:
-                                latency_tracker.record_first_token()
-                            yield part.text
-                            
-                if is_tool_call:
-                    print(f"[GEMINI TOOL CALL] Executing tool: {tool_name} with arguments: {tool_args}")
-                    sys.stdout.flush()
-                    tool_res = await execute_tool(tool_name, tool_args, tenant_id, lead_id, db_session_factory)
-                    print(f"[GEMINI TOOL RESULT] Tool {tool_name} returned: {tool_res}")
-                    sys.stdout.flush()
+                    model = genai.GenerativeModel(**model_kwargs)
+                    current_contents = list(contents)
                     
-                    current_contents.append({
-                        "role": "model",
-                        "parts": [part]
-                    })
-                    current_contents.append({
-                        "role": "user",
-                        "parts": [{
-                            "function_response": {
-                                "name": tool_name,
-                                "response": {"result": tool_res}
-                            }
-                        }]
-                    })
+                    max_gemini_turns = 3
+                    for g_turn in range(max_gemini_turns):
+                        response = await asyncio.to_thread(
+                            model.generate_content,
+                            current_contents,
+                            generation_config={"temperature": 0.2},
+                            stream=True
+                        )
+                        
+                        is_tool_call = False
+                        tool_name = None
+                        tool_args = {}
+                        
+                        iterator = iter(response)
+                        while True:
+                            chunk = await asyncio.to_thread(next, iterator, None)
+                            if chunk is None:
+                                break
+                            
+                            if chunk.candidates and chunk.candidates[0].content.parts:
+                                part = chunk.candidates[0].content.parts[0]
+                                
+                                if hasattr(part, "function_call") and part.function_call and part.function_call.name:
+                                    is_tool_call = True
+                                    tool_name = part.function_call.name
+                                    tool_args = dict(part.function_call.args)
+                                    break
+                                elif hasattr(part, "text") and part.text:
+                                    if latency_tracker:
+                                        latency_tracker.record_first_token()
+                                    yield part.text
+                                    
+                        if is_tool_call:
+                            print(f"[GEMINI TOOL CALL] Executing tool: {tool_name} with arguments: {tool_args}")
+                            sys.stdout.flush()
+                            tool_res = await execute_tool(tool_name, tool_args, tenant_id, lead_id, db_session_factory)
+                            print(f"[GEMINI TOOL RESULT] Tool {tool_name} returned: {tool_res}")
+                            sys.stdout.flush()
+                            
+                            current_contents.append({
+                                "role": "model",
+                                "parts": [part]
+                            })
+                            current_contents.append({
+                                "role": "user",
+                                "parts": [{
+                                    "function_response": {
+                                        "name": tool_name,
+                                        "response": {"result": tool_res}
+                                    }
+                                }]
+                            })
+                            continue
+                        else:
+                            gemini_success = True
+                            break
+                    if gemini_success:
+                        return
+                except Exception as e:
+                    print(f"[LLM ERROR] Gemini model {model_name} failed: {str(e)}")
+                    sys.stdout.flush()
                     continue
-                else:
-                    return
         except Exception as e:
             print(f"[LLM ERROR] Gemini streaming pipeline failed: {str(e)}")
             sys.stdout.flush()
@@ -781,7 +797,13 @@ async def query_gpt4o_dialogue(
 
     augmented_system_prompt = base_prompt
     if rag_context:
-        augmented_system_prompt += f"\n\n[RELEVANT KNOWLEDGE BASE CONTEXT]:\n{rag_context}\n\nEnforce rules: Use only facts from this context to answer questions. If not present, state that a senior advisor will call back with details."
+        augmented_system_prompt += (
+            f"\n\n[STRICT TENANT KNOWLEDGE BASE CONTEXT]:\n{rag_context}\n\n"
+            f"[CRITICAL MULTI-TENANT BOUNDARY LOCK]:\n"
+            f"You represent ONLY this registered tenant company. You MUST answer strictly using facts explicitly present in the above context. "
+            f"NEVER mention, recommend, or invent policy prices, plans, or insurance types from other companies or external knowledge. "
+            f"If a specific detail or price is NOT present in the context above, state politely that a senior advisor will share full details on a callback."
+        )
         
     if rules_text:
         augmented_system_prompt += rules_text
@@ -1186,7 +1208,7 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
             selected_language = tenant.settings["default_language"]
             
         industry_type = tenant.industry if (tenant and tenant.industry) else "Insurance"
-        voice_id = tenant.voice_id if (tenant and tenant.voice_id) else "cgSgspJ2msm6clMCkdW9" # Jessica default
+        voice_speed = tenant.voice_speed if (tenant and tenant.voice_speed and tenant.voice_speed > 0) else 1.25
         tts_provider = tenant.settings.get("tts_provider", "ELEVENLABS") if (tenant and tenant.settings and isinstance(tenant.settings, dict)) else "ELEVENLABS"
         acknowledgment_enabled = tenant.settings.get("acknowledgment_enabled", False) if (tenant and tenant.settings and isinstance(tenant.settings, dict)) else False
         response_delay_enabled = tenant.settings.get("response_delay_enabled", False) if (tenant and tenant.settings and isinstance(tenant.settings, dict)) else False
@@ -1209,7 +1231,7 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
         tts_client = PersistentElevenLabsTTS(voice_id, elevenlabs_key, latency_tracker)
         await tts_client.connect()
     elif tts_provider == "SARVAM" and sarvam_key:
-        tts_client = PersistentSarvamTTS(voice_id, sarvam_key, latency_tracker, is_female)
+        tts_client = PersistentSarvamTTS(voice_id, sarvam_key, latency_tracker, is_female, pace=voice_speed)
         await tts_client.connect()
 
     # Assemble complete system instruction using centralized prompts module
@@ -1253,11 +1275,11 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
 
             if selected_language == "auto" or selected_language == "hindi":
                 if is_female:
-                    greeting = f"Hello, namaste! Kya main {user_name} se baat kar rahi hoon? Main {agent_name} bol rahi hoon, {company_name} se. Main aapko disturb toh nahi kar rahi? 30 seconds ka time milega? Aapke liye ek insurance plan ke baare me short information share karni thi jo aapke liye useful ho sakti hai."
+                    greeting = f"Hello, namaste! Kya main {user_name} se baat kar rahi hoon? Main {agent_name} bol rahi hoon, {company_name} se. Main aapko disturb toh nahi kar rahi? 30 seconds ka time milega?"
                 else:
-                    greeting = f"Hello, namaste! Kya main {user_name} se baat kar raha hoon? Main {agent_name} bol raha hoon, {company_name} se. Main aapko disturb toh nahi kar raha? 30 seconds ka time milega? Aapke liye ek insurance plan ke baare me short information share karni thi jo aapke liye useful ho sakti hai."
+                    greeting = f"Hello, namaste! Kya main {user_name} se baat kar raha hoon? Main {agent_name} bol raha hoon, {company_name} se. Main aapko disturb toh nahi kar raha? 30 seconds ka time milega?"
             else:
-                greeting = f"Hello! Am I speaking with {user_name}? I am {agent_name} from {company_name}. Hope I am not disturbing you. Do you have 30 seconds? I wanted to share some quick information about an insurance plan that could be useful for you."
+                greeting = f"Hello! Am I speaking with {user_name}? I am {agent_name} from {company_name}. Hope I am not disturbing you. Do you have 30 seconds?"
                 
             print(f"[TELEPHONY] Sending initial greeting: {greeting}")
             if tts_client and tts_client.is_connected:
@@ -1493,7 +1515,8 @@ async def render_sarvam_tts_and_send_to_twilio(text: str, voice_id: str, twilio_
         "model": "bulbul:v3",
         "target_language_code": lang_code,
         "speech_sample_rate": 8000,
-        "output_audio_codec": "mulaw"
+        "output_audio_codec": "mulaw",
+        "pace": 1.2
     }
     
     try:

@@ -50,6 +50,7 @@ export default function SettingsPage() {
   const [companyName, setCompanyName] = useState('CoderVu Institute');
   const [website, setWebsite] = useState('codervu.com');
   const [timezone, setTimezone] = useState('Asia/Kolkata');
+  const [customGreeting, setCustomGreeting] = useState('');
 
   // Voice configurations
   const [selectedVoiceId, setSelectedVoiceId] = useState<string>('v-neha');
@@ -101,8 +102,13 @@ export default function SettingsPage() {
         setPromptVersion(profile.system_prompt_version || 1);
         setSelectedVoiceId(profile.voice_id || 'v-neha');
         setTwilioPhone(profile.twilio_phone_number || '');
-        if (profile.settings && profile.settings.tts_provider) {
-          setTtsProvider(profile.settings.tts_provider);
+        if (profile.settings) {
+          if (profile.settings.tts_provider) {
+            setTtsProvider(profile.settings.tts_provider);
+          }
+          if (profile.settings.custom_greeting) {
+            setCustomGreeting(profile.settings.custom_greeting);
+          }
         }
       }
 
@@ -181,7 +187,8 @@ export default function SettingsPage() {
           timezone: timezone,
           settings: {
             tts_provider: ttsProvider,
-            website: website
+            website: website,
+            custom_greeting: customGreeting
           }
         })
       });
@@ -460,6 +467,7 @@ export default function SettingsPage() {
                   </div>
                 </div>
               </div>
+
 
               {/* Submit Button: Save Changes */}
               <div className="pt-2">
