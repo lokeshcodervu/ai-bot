@@ -1286,30 +1286,8 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
                 greeting = f"Hello! Am I speaking with {user_name}? I am {agent_name} from {company_name}. Hope I am not disturbing you. Do you have 30 seconds?"
                 
             print(f"[TELEPHONY] Sending initial greeting: {greeting}")
-            if tts_client and tts_client.is_connected:
-                # Use persistent client
-                if tts_provider == "ELEVENLABS":
-                    await tts_client.el_ws.send(json.dumps({
-                        "text": greeting + " ",
-                        "try_trigger_generation": True
-                    }))
-                    await tts_client.el_ws.send(json.dumps({
-                        "text": " ",
-                        "try_trigger_generation": True
-                    }))
-                elif tts_provider == "SARVAM":
-                    await tts_client.sarvam_ws.send(json.dumps({
-                        "type": "text",
-                        "data": {
-                            "text": greeting + " "
-                        }
-                    }))
-                    await tts_client.sarvam_ws.send(json.dumps({
-                        "type": "flush"
-                    }))
-            else:
-                tts_task = asyncio.create_task(render_tts_and_send_to_twilio(greeting, voice_id, twilio_ws, stream_sid, tts_provider))
-                active_tts_tasks.append(tts_task)
+            tts_task = asyncio.create_task(render_tts_and_send_to_twilio(greeting, voice_id, twilio_ws, stream_sid, tts_provider))
+            active_tts_tasks.append(tts_task)
                 
             conversation_history.append({"role": "assistant", "content": greeting})
             
@@ -1406,37 +1384,13 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
                                 ):
                                     full_reply += text_chunk
                                     
-                                    # Clean reply of extra formatting
-                                    clean_chunk = text_chunk.replace("**", "").replace("*", "").replace("`", "")
-                                    if tts_client and tts_client.is_connected:
-                                        if tts_provider == "ELEVENLABS":
-                                            await tts_client.el_ws.send(json.dumps({
-                                                "text": clean_chunk,
-                                                "try_trigger_generation": True
-                                            }))
-                                        elif tts_provider == "SARVAM":
-                                            await tts_client.sarvam_ws.send(json.dumps({
-                                                "type": "text",
-                                                "data": {
-                                                    "text": clean_chunk
-                                                }
-                                            }))
-                                        
-                                # Signal persistent client that text stream is completed for this turn
-                                if tts_client and tts_client.is_connected:
-                                    if tts_provider == "ELEVENLABS":
-                                        await tts_client.el_ws.send(json.dumps({
-                                            "text": " ",
-                                            "try_trigger_generation": True
-                                        }))
-                                    elif tts_provider == "SARVAM":
-                                        await tts_client.sarvam_ws.send(json.dumps({
-                                            "type": "flush"
-                                        }))
-                                    
                                 print(f"[LLM AGENT] Raw reply completed: {full_reply}")
                                 final_reply = full_reply.replace("**", "").replace("*", "").replace("`", "").strip()
                                 print(f"[LLM AGENT] Clean reply: {final_reply}")
+
+                                # Render TTS and send audio to Twilio
+                                tts_task = asyncio.create_task(render_tts_and_send_to_twilio(final_reply, voice_id, twilio_ws, stream_sid, tts_provider))
+                                active_tts_tasks.append(tts_task)
                                 
                                 # Save history turn
                                 conversation_history.append({"role": "user", "content": transcript})
@@ -1525,7 +1479,7 @@ async def render_sarvam_tts_and_send_to_twilio(text: str, voice_id: str, twilio_
         "target_language_code": lang_code,
         "speech_sample_rate": 8000,
         "output_audio_codec": "mulaw",
-        "pace": 1.2
+        "pace": 1.25
     }
     
     try:
