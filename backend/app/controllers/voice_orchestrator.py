@@ -1497,14 +1497,20 @@ async def render_sarvam_tts_and_send_to_twilio(text: str, voice_id: str, twilio_
                         except Exception as e:
                             print(f"[SARVAM TTS] Preceding task wait failed: {e}")
                             
-                    media_payload = {
-                        "event": "media",
-                        "streamSid": stream_sid,
-                        "media": {
-                            "payload": audio_base64
+                    raw_audio = base64.b64decode(audio_base64)
+                    chunk_size = 1280  # 160ms of 8000 Hz mu-law audio
+                    for i in range(0, len(raw_audio), chunk_size):
+                        chunk = raw_audio[i:i + chunk_size]
+                        chunk_b64 = base64.b64encode(chunk).decode("utf-8")
+                        media_payload = {
+                            "event": "media",
+                            "streamSid": stream_sid,
+                            "media": {
+                                "payload": chunk_b64
+                            }
                         }
-                    }
-                    await twilio_ws.send_json(media_payload)
+                        await twilio_ws.send_json(media_payload)
+                        await asyncio.sleep(0.02)  # Paced frame streaming for real-time delivery
                 else:
                     raise Exception("Sarvam API returned empty audios array.")
             else:
