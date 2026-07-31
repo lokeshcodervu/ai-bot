@@ -1169,10 +1169,22 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
             except Exception:
                 lead = None
 
-        if not lead:
-            print("[TELEPHONY ERROR] Lead not found in DB.")
-            return
-            
+        import datetime
+        lead.status = LeadStatus.CONNECTED
+        lead.last_call_at = datetime.datetime.utcnow()
+        db.commit()
+
+        pub_campaign_id = "single-call" if (not campaign_id or campaign_id == "single-call") else campaign_id
+        try:
+            publish_sync(f"campaign:{pub_campaign_id}", {
+                "event": "status_update",
+                "lead_id": str(lead_id),
+                "status": LeadStatus.CONNECTED,
+                "disposition": "In Progress"
+            })
+        except Exception as pub_err:
+            print(f"[TELEPHONY] PubSub connect update error: {pub_err}")
+
         tenant_id = campaign.tenant_id if campaign else lead.tenant_id
         tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
         
@@ -1648,7 +1660,11 @@ async def save_telephony_call_log(
             if lead and lead.status == LeadStatus.CONNECTED:
                 # Reset lead status if stuck in Connected
                 if campaign_id and campaign_id != "single-call":
-                    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+                    try:
+                        uuid.UUID(str(campaign_id))
+                        campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+                    except Exception:
+                        campaign = None
                     if campaign and lead.retry_count < campaign.max_retries:
                         lead.retry_count += 1
                         lead.status = LeadStatus.PENDING_QUEUE
@@ -1774,14 +1790,18 @@ async def save_telephony_call_log(
         print(f"[TELEPHONY] Successfully saved CallLog for lead={lead_id} to database.")
 
         # Publish final completed status to campaign WS room so frontend updates in real time
-        if campaign_id and campaign_id != "single-call" and lead:
+        pub_campaign_id = "single-call" if (not campaign_id or campaign_id == "single-call") else campaign_id
+        if lead:
             print(f"[TELEPHONY] Publishing status update to frontend for lead={lead_id}: status={final_status}")
-            publish_sync(f"campaign:{campaign_id}", {
-                "event": "status_update",
-                "lead_id": str(lead_id),
-                "status": final_status,
-                "disposition": "Answered"
-            })
+            try:
+                publish_sync(f"campaign:{pub_campaign_id}", {
+                    "event": "status_update",
+                    "lead_id": str(lead_id),
+                    "status": final_status,
+                    "disposition": "Answered"
+                })
+            except Exception as pub_err:
+                print(f"[TELEPHONY] PubSub status publish error: {pub_err}")
             
     except Exception as e:
         db.rollback()
