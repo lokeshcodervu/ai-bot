@@ -289,9 +289,9 @@ from app.utils.pubsub import publish_sync
 from app.config.settings import settings
 
 # Load API keys from environment
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") or settings.OPENAI_API_KEY
-DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY") or os.getenv("OPENAI_API_KEY") or settings.DEEPGRAM_API_KEY or settings.OPENAI_API_KEY
-ELEVENLABS_API_KEY = os.getenv("elevenlabs") or os.getenv("ELEVENLABS_API_KEY") or settings.ELEVENLABS_API_KEY
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") or getattr(settings, "OPENAI_API_KEY", "")
+DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY") or getattr(settings, "DEEPGRAM_API_KEY", "") or "340417419c2f5b635c09b71d83a3b86651c18ff5"
+ELEVENLABS_API_KEY = os.getenv("elevenlabs") or os.getenv("ELEVENLABS_API_KEY") or getattr(settings, "ELEVENLABS_API_KEY", "")
 
 def humanize_text(text: str) -> str:
     if not text:
