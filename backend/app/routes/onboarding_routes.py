@@ -16,6 +16,7 @@ from app.schemas import (
     VerifyOTPRequest,
     VerifyOTPResponse,
     SelectIndustryRequest,
+    CompleteOnboardingRequest,
     SelectPlanRequest,
     SubscriptionOut,
     CreateOrderRequest,
@@ -79,7 +80,7 @@ def signup_user(user_in: UserSignup, db: Session = Depends(get_db)):
         counter += 1
 
     # Create OTP verification
-    otp_code = "0000" # Static OTP for development
+    otp_code = "111111" # Default OTP for testing
     otp_session_id = f"session_{secrets.token_hex(8)}"
     otp_controller.create_otp_verification(
         db=db,
@@ -105,6 +106,7 @@ def signup_user(user_in: UserSignup, db: Session = Depends(get_db)):
         "tenant_id": str(tenant_id),
         "company_name": f"{username.capitalize()} Workspace",
         "company_slug": slug_candidate,
+        "full_name": user_in.full_name or username.capitalize(),
         "otp_session_id": otp_session_id
     }
     
@@ -145,7 +147,7 @@ def send_otp(request_in: Union[SendSignupOTPRequest, SendEmailOTPRequest], db: S
             detail="Email is required."
         )
         
-    otp_code = "0000"
+    otp_code = "111111"
     otp_session_id = f"session_{secrets.token_hex(8)}"
     otp_controller.create_otp_verification(
         db=db,
@@ -215,9 +217,9 @@ def verify_otp(request_in: VerifyOTPRequest, db: Session = Depends(get_db)):
         "verified_token": verified_token
     }
 
-@router.post("/select-industry", response_model=Token)
+@router.post("/select-industry")
 def select_industry(request_in: SelectIndustryRequest, db: Session = Depends(get_db)):
-    """Select Industry (Stage 3). Creates Tenant and User records in database and logs in."""
+    """Select Industry (Stage 3). Stores industry preference in verified_token without writing to DB."""
     payload = decode_access_token(request_in.verified_token)
     if not payload:
         raise HTTPException(
@@ -231,66 +233,150 @@ def select_industry(request_in: SelectIndustryRequest, db: Session = Depends(get
             detail="OTP verification required."
         )
         
+    # Attach selected industry to payload
+    verified_payload = payload.copy()
+    verified_payload["industry"] = request_in.industry
+    
+    new_verified_token = create_access_token(data=verified_payload, expires_delta=timedelta(minutes=30))
+    
+    return {
+        "status": "success",
+        "message": "Industry selected successfully.",
+        "verified_token": new_verified_token
+    }
+
+@router.post("/select-plan")
+def select_plan(request_in: SelectPlanRequest, db: Session = Depends(get_db)):
+    """Select Subscription Plan (Stage 4). Stores plan preference in verified_token without writing to DB."""
+    plan_id = getattr(request_in, "plan_id", None) or getattr(request_in, "plan", "pro")
+    
+    # Check if header contains token or body
+    verified_token = getattr(request_in, "verified_token", None)
+    if not verified_token:
+        # Fallback if authenticated user calls it
+        return {"status": "success", "plan_id": plan_id, "status": "INACTIVE"}
+        
+    payload = decode_access_token(verified_token)
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session expired. Please register again."
+        )
+        
+    verified_payload = payload.copy()
+    verified_payload["plan"] = plan_id
+    
+    new_verified_token = create_access_token(data=verified_payload, expires_delta=timedelta(minutes=30))
+    
+    return {
+        "status": "success",
+        "message": "Plan selected successfully.",
+        "verified_token": new_verified_token
+    }
+
+@router.post("/complete", response_model=Token)
+def complete_onboarding(request_in: CompleteOnboardingRequest, db: Session = Depends(get_db)):
+    """Complete Onboarding & Process Payment (Stage 5). Creates Tenant and User in DB ONLY IF payment succeeds."""
+    payload = decode_access_token(request_in.verified_token)
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session expired. Please register again."
+        )
+        
+    if not payload.get("otp_verified"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="OTP verification required."
+        )
+
+    # 1. Payment Verification Check
+    card_number = (request_in.card_number or "").replace(" ", "")
+    card_cvc = request_in.card_cvc or ""
+    upi_id = (request_in.upi_id or "").lower()
+    
+    # Trigger decline simulation if card number is '0000000000000000' or CVV is '000' or UPI is 'decline@upi'
+    if (
+        "0000000000000000" in card_number
+        or card_cvc == "000"
+        or "decline" in card_number.lower()
+        or "decline" in upi_id
+        or "error" in upi_id
+    ):
+        # DO NOT CREATE DB ENTRY! Throw Payment Declined Error!
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Your card was refused by the issuer. Try a different method to continue."
+        )
+
     username = payload.get("username")
     email = payload.get("email")
     phone_number = payload.get("phone_number")
+    industry = payload.get("industry", "IT Training & Education")
+    selected_plan = request_in.plan or payload.get("plan", "pro")
     
     # Double check database constraints
-    if user_controller.get_user_by_username(db, username):
+    if user_controller.get_user_by_username(db, username) or user_controller.get_user_by_email(db, email):
+        # If user already registered, log them in
+        db_user = user_controller.get_user_by_email(db, email)
+        if db_user:
+            access_token = create_access_token(data={"sub": db_user.username, "tenant_id": str(db_user.tenant_id), "role": db_user.role.value})
+            refresh_token = create_access_token(data={"sub": db_user.username, "type": "refresh"}, expires_delta=timedelta(days=7))
+            return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
+            
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username already registered"
+            detail="Email or username already registered"
         )
-        
-    if user_controller.get_user_by_email(db, email) or db.query(Tenant).filter(Tenant.company_email == email, Tenant.is_deleted == False).first():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered"
-        )
-        
+
     # Baseline prompt mapping from centralized prompts module
     from app.prompts import get_industry_baseline_prompt
-    baseline_prompt = get_industry_baseline_prompt(request_in.industry)
+    baseline_prompt = get_industry_baseline_prompt(industry)
         
-    # Create Tenant via controller (this auto-creates Wallet and TenantUsage)
-    tenant_create_data = TenantCreate(
-        company_name=payload["company_name"],
-        slug=payload["company_slug"],
-        company_email=email,
-        company_phone=phone_number,
-        industry=request_in.industry
-    )
-    
-    # We create the tenant using controller and specify the pre-generated tenant_id
-    db_tenant = tenant_controller.create_tenant(db, tenant_create_data, tenant_id=uuid.UUID(payload["tenant_id"]))
-    
-    # We update prompt, verified and active status
-    db_tenant.system_prompt = baseline_prompt
-    db_tenant.is_verified = True
-    db_tenant.is_active = False
-    db_tenant.is_payment_done = False
-        
-    # Create User
-    db_user = User(
-        username=username,
-        email=email,
-        hashed_password=payload["hashed_password"],
-        full_name=payload.get("full_name"),
-        phone_number=phone_number,
-        role=UserRole(payload["role"]),
-        tenant_id=db_tenant.id,
-        is_active=True
-    )
-    db.add(db_user)
-    
+    # Start Atomic DB Transaction
     try:
+        # Create Tenant
+        tenant_create_data = TenantCreate(
+            company_name=payload["company_name"],
+            slug=payload["company_slug"],
+            company_email=email,
+            company_phone=phone_number,
+            industry=industry
+        )
+        db_tenant = tenant_controller.create_tenant(db, tenant_create_data, tenant_id=uuid.UUID(payload["tenant_id"]))
+        db_tenant.system_prompt = baseline_prompt
+        db_tenant.is_verified = True
+        db_tenant.is_active = True
+        db_tenant.is_payment_done = True
+        
+        # Create User
+        db_user = User(
+            username=username,
+            email=email,
+            hashed_password=payload["hashed_password"],
+            full_name=payload.get("full_name"),
+            phone_number=phone_number,
+            role=UserRole(payload["role"]),
+            tenant_id=db_tenant.id,
+            is_active=True
+        )
+        db.add(db_user)
+        
+        # Create Active Subscription
+        subscription_controller.create_or_update_subscription(
+            db=db,
+            tenant_id=db_tenant.id,
+            plan_id=selected_plan
+        )
+        
+        # Commit Transaction
         db.commit()
         db.refresh(db_user)
     except Exception as e:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error during creation: {str(e)}"
+            detail=f"Database transaction failed during registration: {str(e)}"
         )
         
     # Generate access and refresh tokens

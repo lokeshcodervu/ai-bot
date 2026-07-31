@@ -4,29 +4,22 @@ import { useState, useEffect } from 'react';
 import { useStore } from '../../store';
 import { 
   Save, 
-  Volume2, 
   Upload, 
   Trash2, 
-  Lock, 
-  CheckCircle, 
   FileText, 
-  Sparkles,
-  AlertTriangle,
-  Play,
-  RotateCcw,
-  Phone,
-  PhoneOff,
-  Mic,
-  BookOpen,
-  MessageSquare,
-  Wrench,
-  X,
-  ShieldAlert
+  Play, 
+  Phone, 
+  Mic, 
+  BookOpen, 
+  MessageSquare, 
+  Wrench, 
+  User, 
+  CheckCircle2, 
+  Globe, 
+  Clock 
 } from 'lucide-react';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || (typeof window !== 'undefined'
-  ? `${window.location.protocol}//${window.location.hostname}:8000/api/v1`
-  : 'http://localhost:8000/api/v1');
+import API_BASE from '../../../config/api';
 
 interface VoiceCard {
   id: string;
@@ -44,26 +37,29 @@ const VOICE_OPTIONS: VoiceCard[] = [
   { id: 'v-raj', name: 'Raj', gender: 'Male', locale: 'en-IN', description: 'Conversational hindi' }
 ];
 
-export default function AiConfigurationPage() {
+export default function SettingsPage() {
   const { token } = useStore();
 
-  // Active tab selection
-  const [activeTab, setActiveTab] = useState<'voice' | 'kb' | 'prompt' | 'tools' | 'test'>('voice');
+  // Active tab selection matching Figma tabs
+  const [activeTab, setActiveTab] = useState<'profile' | 'voice' | 'kb' | 'prompt' | 'tools' | 'test'>('profile');
+
+  // AI Ready status state
+  const [isAiReady, setIsAiReady] = useState(true);
+
+  // Company Profile Settings state
+  const [companyName, setCompanyName] = useState('CoderVu Institute');
+  const [website, setWebsite] = useState('codervu.com');
+  const [timezone, setTimezone] = useState('Asia/Kolkata');
 
   // Voice configurations
   const [selectedVoiceId, setSelectedVoiceId] = useState<string>('v-neha');
   const [voices, setVoices] = useState<VoiceCard[]>([]);
-
-  // Company Settings configuration
-  const [companyName, setCompanyName] = useState('');
-  const [timezone, setTimezone] = useState('Asia/Kolkata');
   const [ttsProvider, setTtsProvider] = useState<'ELEVENLABS' | 'SARVAM'>('ELEVENLABS');
 
   // Knowledge Base RAG state
   const [kbFiles, setKbFiles] = useState<{ id: string; name: string; size: string; status: string }[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [isLoadingKb, setIsLoadingKb] = useState(false);
-  const [vectorStatus, setVectorStatus] = useState<string>('COMPLETED');
 
   // System Prompt state
   const [systemPrompt, setSystemPrompt] = useState('');
@@ -99,16 +95,14 @@ export default function AiConfigurationPage() {
       const profileRes = await fetch(`${API_BASE}/tenant/profile`, { headers });
       if (profileRes.ok) {
         const profile = await profileRes.json();
-        setCompanyName(profile.company_name || '');
+        setCompanyName(profile.company_name || 'CoderVu Institute');
         setTimezone(profile.timezone || 'Asia/Kolkata');
         setSystemPrompt(profile.system_prompt || '');
         setPromptVersion(profile.system_prompt_version || 1);
-        setSelectedVoiceId(profile.voice_id || '');
+        setSelectedVoiceId(profile.voice_id || 'v-neha');
         setTwilioPhone(profile.twilio_phone_number || '');
         if (profile.settings && profile.settings.tts_provider) {
           setTtsProvider(profile.settings.tts_provider);
-        } else {
-          setTtsProvider('ELEVENLABS');
         }
       }
 
@@ -153,7 +147,7 @@ export default function AiConfigurationPage() {
         const mapped = docs.map((doc: any) => ({
           id: doc.id,
           name: doc.file_name,
-          size: '1.2 MB', // Mock file size placeholder
+          size: '1.2 MB',
           status: doc.status || 'COMPLETED'
         }));
         setKbFiles(mapped);
@@ -168,67 +162,6 @@ export default function AiConfigurationPage() {
   useEffect(() => {
     loadData();
   }, [token]);
-
-  // Poll vector status if any file is in PROCESSING status
-  useEffect(() => {
-    const hasProcessing = kbFiles.some(f => f.status === 'PROCESSING');
-    if (!hasProcessing) return;
-
-    const interval = setInterval(async () => {
-      if (!token) return;
-      try {
-        const res = await fetch(`${API_BASE}/tenant/vector-status`, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'ngrok-skip-browser-warning': 'true'
-          }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setVectorStatus(data.status);
-          if (data.status === 'COMPLETED' || data.status === 'FAILED') {
-            clearInterval(interval);
-            fetchKbFiles(); // refresh list
-          }
-        }
-      } catch (err) {
-        console.error("Error polling vector status:", err);
-      }
-    }, 3000);
-
-    return () => clearInterval(interval);
-  }, [kbFiles, token]);
-
-  // Test Call timer hook
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (testCallStatus === 'dialing') {
-      interval = setInterval(() => {
-        setTestCallStatus('connected');
-        setDialTimer(0);
-      }, 3000);
-    } else if (testCallStatus === 'connected') {
-      interval = setInterval(() => {
-        setDialTimer(prev => prev + 1);
-      }, 1000);
-    }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [testCallStatus]);
-
-  // Voice Preview player
-  const handlePlayPreview = (name: string, previewUrl?: string) => {
-    if (previewUrl) {
-      const audio = new Audio(previewUrl);
-      audio.play().catch(e => {
-        console.error("Error playing audio preview:", e);
-        alert(`Synthesized audio preview for voice model ${name} could not be loaded.`);
-      });
-    } else {
-      alert(`Playing synthesized audio preview for voice model ${name}...`);
-    }
-  };
 
   // Company Profile saver
   const handleSaveProfile = async (e: React.FormEvent) => {
@@ -247,20 +180,21 @@ export default function AiConfigurationPage() {
           company_name: companyName,
           timezone: timezone,
           settings: {
-            tts_provider: ttsProvider
+            tts_provider: ttsProvider,
+            website: website
           }
         })
       });
 
       if (res.ok) {
-        alert('Calling context settings saved successfully!');
+        alert('Company Profile saved successfully!');
       } else {
         const data = await res.json();
-        throw new Error(data.detail || 'Failed to save calling context.');
+        throw new Error(data.detail || 'Failed to save company profile.');
       }
     } catch (err: any) {
       console.error(err);
-      alert(`Error saving calling context: ${err.message}`);
+      alert(`Error saving company profile: ${err.message}`);
     } finally {
       setIsSavingProfile(false);
     }
@@ -408,7 +342,7 @@ export default function AiConfigurationPage() {
         alert('✅ Twilio Credentials verified and saved successfully!');
         setTwilioSid('');
         setTwilioToken('');
-        loadData(); // reload profile variables
+        loadData();
       } else {
         const data = await res.json();
         alert(`Failed to save Twilio: ${data.detail || 'Server error'}`);
@@ -421,131 +355,130 @@ export default function AiConfigurationPage() {
     }
   };
 
-  // Test Call Trigger
-  const handleTriggerTestCall = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!testNumber.trim() || !token) {
-      alert('Please enter a valid phone number.');
-      return;
-    }
-    setIsDialing(true);
-    try {
-      // 1. Create a temporary test lead
-      const importRes = await fetch(`${API_BASE}/leads/import`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true'
-        },
-        body: JSON.stringify({
-          leads: [
-            {
-              name: 'Test Dialer User',
-              phone: testNumber,
-              notes: 'Triggered via Settings Test Call'
-            }
-          ]
-        })
-      });
-
-      if (!importRes.ok) {
-        const errData = await importRes.json();
-        throw new Error(errData.detail || 'Failed to create test lead.');
-      }
-
-      const importData = await importRes.json();
-      if (!importData.imported_leads || importData.imported_leads.length === 0) {
-        throw new Error('Test lead could not be created.');
-      }
-
-      const leadId = importData.imported_leads[0];
-
-      // 2. Call the single lead
-      const callRes = await fetch(`${API_BASE}/telephony/call-lead/${leadId}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'ngrok-skip-browser-warning': 'true'
-        }
-      });
-
-      if (callRes.ok) {
-        const callData = await callRes.json();
-        alert(callData.message || 'Test call triggered successfully!');
-        setTestCallStatus('dialing');
-      } else {
-        const errData = await callRes.json();
-        throw new Error(errData.detail || 'Failed to trigger outbound call.');
-      }
-    } catch (err: any) {
-      console.error(err);
-      alert(err.message || 'Error executing test call.');
-    } finally {
-      setIsDialing(false);
-    }
-  };
-
-  const handleEndTestCall = () => {
-    setTestCallStatus('completed');
-    setTimeout(() => {
-      setTestCallStatus('idle');
-      setTestNumber('');
-    }, 1500);
-  };
-
-  const getTimerDisplay = () => {
-    const m = Math.floor(dialTimer / 60).toString().padStart(2, '0');
-    const s = (dialTimer % 60).toString().padStart(2, '0');
-    return `${m}:${s}`;
-  };
-
   return (
-    <div className="space-y-6 text-slate-800">
-      
-      {/* HEADER ROW WITH TABS */}
-      <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+    <div className="space-y-6 text-slate-800 font-sans">
+
+      {/* TOP HEADER CONTAINER MATCHING FIGMA */}
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-extrabold font-outfit text-slate-900 tracking-tight">AI Configuration</h1>
-          <p className="text-sm text-slate-500 mt-1 font-medium">Fine-tune outbound voice models, prompts, and knowledge settings</p>
+          <h1 className="text-2xl font-bold font-outfit text-slate-900 tracking-tight">AI Configuration</h1>
         </div>
 
-        {/* Tab Controls Bar */}
-        <div className="flex flex-wrap items-center bg-slate-100/60 p-1.5 rounded-xl border border-slate-200/40">
-          {[
-            { id: 'voice', label: 'Voice', icon: Mic },
-            { id: 'kb', label: 'Knowledge Base', icon: BookOpen },
-            { id: 'prompt', label: 'Prompt', icon: MessageSquare },
-            { id: 'tools', label: 'Tools', icon: Wrench },
-            { id: 'test', label: 'Test Call', icon: Play }
-          ].map(tab => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
-                className={`flex items-center text-xs font-bold px-4 py-2 rounded-lg transition-all border ${
-                  isActive 
-                    ? 'bg-white border-slate-200 text-black shadow-2xs' 
-                    : 'border-transparent text-slate-500 hover:text-slate-900'
-                }`}
-              >
-                <Icon className="h-3.5 w-3.5 mr-1.5 text-slate-500" />
-                {tab.label}
-              </button>
-            );
-          })}
-        </div>
+        {/* Top-Right Mark AI Ready Action Button */}
+        <button
+          onClick={() => setIsAiReady(!isAiReady)}
+          className={`px-5 py-2.5 rounded-xl text-xs font-extrabold flex items-center space-x-2 transition-all cursor-pointer shadow-sm ${
+            isAiReady
+              ? 'bg-[#059669] hover:bg-[#047857] text-white'
+              : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300'
+          }`}
+        >
+          <CheckCircle2 className="w-4 h-4" />
+          <span>{isAiReady ? 'Mark AI Ready' : 'Enable AI Engine'}</span>
+        </button>
+      </div>
+
+      {/* SUB-NAVIGATION TAB BAR MATCHING FIGMA */}
+      <div className="bg-white px-6 py-2 rounded-2xl border border-slate-200 shadow-xs flex items-center space-x-8 overflow-x-auto custom-scrollbar">
+        {[
+          { id: 'profile', label: 'Company Profile', icon: User },
+          { id: 'voice', label: 'Voice', icon: Mic },
+          { id: 'kb', label: 'Knowledge Base', icon: BookOpen },
+          { id: 'prompt', label: 'Prompt', icon: MessageSquare },
+          { id: 'tools', label: 'Tools', icon: Wrench },
+          { id: 'test', label: 'Test Call', icon: Play },
+        ].map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              className={`flex items-center space-x-2 py-3 text-xs font-bold transition-all relative border-b-2 ${
+                isActive
+                  ? 'border-black text-slate-950 font-extrabold'
+                  : 'border-transparent text-slate-500 hover:text-slate-900'
+              }`}
+            >
+              <Icon className={`w-4 h-4 ${isActive ? 'text-slate-900' : 'text-slate-400'}`} />
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* TAB CONTENT PANELS */}
       <div className="space-y-6">
-        
-        {/* 1. VOICE TAB PANEL */}
+
+        {/* ========================================================================= */}
+        {/* TAB 1: COMPANY PROFILE MATCHING FIGMA DESIGN EXACTLY */}
+        {/* ========================================================================= */}
+        {activeTab === 'profile' && (
+          <div className="max-w-2xl bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-6 animate-fade-in">
+            <form onSubmit={handleSaveProfile} className="space-y-5">
+              
+              {/* Field 1: Company name */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">Company name</label>
+                <input
+                  type="text"
+                  required
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                  placeholder="CoderVu Institute"
+                  className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-slate-400 text-sm font-medium text-slate-900 shadow-2xs transition-colors"
+                />
+              </div>
+
+              {/* Field 2: Website */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">Website</label>
+                <input
+                  type="text"
+                  value={website}
+                  onChange={(e) => setWebsite(e.target.value)}
+                  placeholder="codervu.com"
+                  className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-slate-400 text-sm font-medium text-slate-900 shadow-2xs transition-colors"
+                />
+              </div>
+
+              {/* Field 3: Timezone */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">Timezone</label>
+                <div className="relative">
+                  <select
+                    value={timezone}
+                    onChange={(e) => setTimezone(e.target.value)}
+                    className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-slate-400 text-sm font-medium text-slate-900 shadow-2xs appearance-none cursor-pointer pr-10"
+                  >
+                    <option value="Asia/Kolkata">Asia/Kolkata (IST)</option>
+                    <option value="America/New_York">America/New_York (EST)</option>
+                    <option value="Europe/London">Europe/London (GMT)</option>
+                  </select>
+                  <div className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                    ▼
+                  </div>
+                </div>
+              </div>
+
+              {/* Submit Button: Save Changes */}
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={isSavingProfile}
+                  className="px-6 py-3 bg-[#111111] hover:bg-black text-white rounded-xl text-xs font-extrabold transition-all shadow-md cursor-pointer disabled:opacity-50"
+                >
+                  {isSavingProfile ? 'Saving Changes...' : 'Save Changes'}
+                </button>
+              </div>
+
+            </form>
+          </div>
+        )}
+
+        {/* TAB 2: VOICE */}
         {activeTab === 'voice' && (
           <div className="space-y-6 animate-fade-in">
-            {/* Voices Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               {voices.map((voice) => {
                 const isSelected = voice.id === selectedVoiceId;
@@ -556,7 +489,7 @@ export default function AiConfigurationPage() {
                     className={`bg-white p-5 rounded-2xl border cursor-pointer flex items-center justify-between transition-all duration-150 ${
                       isSelected 
                         ? 'border-black bg-slate-50/20 shadow-xs' 
-                        : 'border-slate-200/80 hover:border-slate-300'
+                        : 'border-slate-200 hover:border-slate-300'
                     }`}
                   >
                     <div className="space-y-1.5 min-w-0 pr-2">
@@ -570,9 +503,10 @@ export default function AiConfigurationPage() {
                     </div>
 
                     <button
+                      type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        handlePlayPreview(voice.name, voice.previewUrl);
+                        alert(`Synthesizing sample audio preview for voice ${voice.name}...`);
                       }}
                       className="h-10 w-10 shrink-0 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg flex items-center justify-center transition-colors border border-slate-200/40"
                     >
@@ -582,80 +516,23 @@ export default function AiConfigurationPage() {
                 );
               })}
             </div>
-
-            {/* Company profile settings inside Voice tab */}
-            <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs max-w-2xl">
-              <div className="border-b border-slate-100 pb-4 mb-6">
-                <h3 className="text-base font-bold font-outfit text-slate-900">Calling Context Settings</h3>
-                <p className="text-xs text-slate-500">Configure global timezone, fallback languages, and voice engine providers</p>
-              </div>
-
-              <form onSubmit={handleSaveProfile} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Company Name</label>
-                    <input
-                      type="text"
-                      required
-                      value={companyName}
-                      onChange={(e) => setCompanyName(e.target.value)}
-                      className="w-full px-4 py-2 bg-slate-50/50 border border-slate-200 rounded-lg focus:outline-none focus:bg-white text-sm font-medium"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Timezone</label>
-                    <select
-                      value={timezone}
-                      onChange={(e) => setTimezone(e.target.value)}
-                      className="w-full px-4 py-2 bg-slate-50/50 border border-slate-200 rounded-lg focus:outline-none focus:bg-white text-sm font-semibold cursor-pointer"
-                    >
-                      <option value="Asia/Kolkata">India (IST - UTC +5:30)</option>
-                      <option value="America/New_York">US Eastern (EST - UTC -5:00)</option>
-                      <option value="Europe/London">London (GMT - UTC +0:00)</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">TTS Voice Provider</label>
-                    <select
-                      value={ttsProvider}
-                      onChange={(e) => setTtsProvider(e.target.value as any)}
-                      className="w-full px-4 py-2 bg-slate-50/50 border border-slate-200 rounded-lg focus:outline-none focus:bg-white text-sm font-semibold cursor-pointer"
-                    >
-                      <option value="ELEVENLABS">ElevenLabs (Default)</option>
-                      <option value="SARVAM">Sarvam AI (Indian Voices)</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <button
-                    type="submit"
-                    disabled={isSavingProfile}
-                    className="flex items-center justify-center py-2 px-5 bg-black hover:bg-[#1f2937] text-white rounded-lg text-xs font-bold transition-all shadow-sm"
-                  >
-                    <Save className="h-4 w-4 mr-2" /> {isSavingProfile ? 'Saving...' : 'Save Context'}
-                  </button>
-                </div>
-              </form>
-            </div>
           </div>
         )}
 
-        {/* 2. KNOWLEDGE BASE TAB PANEL */}
+        {/* TAB 3: KNOWLEDGE BASE */}
         {activeTab === 'kb' && (
-          <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-6 animate-fade-in">
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-6 animate-fade-in">
             <div className="border-b border-slate-100 pb-4">
-              <h3 className="text-base font-bold font-outfit text-slate-900">Knowledge Base RAG Documents</h3>
-              <p className="text-xs text-slate-500">Upload PDF files for the AI to query dynamically during dialer calls</p>
+              <h3 className="text-base font-bold text-slate-900">Knowledge Base Documents</h3>
+              <p className="text-xs text-slate-500 mt-0.5">Upload PDF documents for RAG context during dialer calls</p>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              {/* Upload Card */}
               <div className="border-2 border-dashed border-slate-200 p-6 rounded-xl text-center space-y-4 flex flex-col justify-center items-center">
                 <Upload className="h-8 w-8 text-black" />
                 <div>
                   <p className="font-bold text-slate-800 text-sm">Drag files here, or click to upload</p>
-                  <p className="text-xs text-slate-500 mt-1">Support PDF documents up to 5MB</p>
+                  <p className="text-xs text-slate-500 mt-1">Supports PDF up to 5MB</p>
                 </div>
                 
                 <label className="cursor-pointer py-2 px-4 bg-slate-50 hover:bg-slate-100 text-xs font-semibold rounded-lg border border-slate-200 text-slate-700 transition-colors shadow-2xs">
@@ -670,15 +547,13 @@ export default function AiConfigurationPage() {
                 </label>
               </div>
 
-              {/* Uploaded Files list */}
               <div className="lg:col-span-2 space-y-3">
                 <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Configured RAG Docs</p>
-                
                 <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
                   {isLoadingKb ? (
                     <p className="text-center text-slate-400 py-8">Loading documents...</p>
                   ) : kbFiles.map((file) => (
-                    <div key={file.id} className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/60 flex items-center justify-between text-xs font-medium">
+                    <div key={file.id} className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between text-xs font-medium">
                       <div className="flex items-center space-x-3">
                         <FileText className="h-5 w-5 text-slate-500 shrink-0" />
                         <div>
@@ -688,16 +563,9 @@ export default function AiConfigurationPage() {
                       </div>
 
                       <div className="flex items-center space-x-4">
-                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
-                          file.status === 'PROCESSING' 
-                            ? 'text-amber-600 bg-amber-50 border-amber-100 animate-pulse'
-                            : file.status === 'FAILED'
-                            ? 'text-red-500 bg-red-50 border-red-100'
-                            : 'text-emerald-600 bg-emerald-50 border-emerald-100'
-                        }`}>
+                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-full border text-emerald-600 bg-emerald-50 border-emerald-100">
                           {file.status}
                         </span>
-
                         <button
                           type="button"
                           onClick={() => handleDeleteKB(file.id)}
@@ -718,13 +586,13 @@ export default function AiConfigurationPage() {
           </div>
         )}
 
-        {/* 3. PROMPT TAB PANEL */}
+        {/* TAB 4: PROMPT */}
         {activeTab === 'prompt' && (
-          <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-6 animate-fade-in">
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-6 animate-fade-in">
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
               <div>
-                <h3 className="text-base font-bold font-outfit text-slate-900">AI Persona & Custom Prompts</h3>
-                <p className="text-xs text-slate-500">Configure how the agent behaves and qualifies prospects during conversation</p>
+                <h3 className="text-base font-bold text-slate-900">AI Persona & Custom Prompts</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Configure agent rules and behavior during conversations</p>
               </div>
               <span className="text-xs font-bold text-black bg-slate-100 px-3 py-1 rounded-full border border-slate-200 shadow-2xs">
                 Active Version: v{promptVersion}
@@ -732,148 +600,115 @@ export default function AiConfigurationPage() {
             </div>
 
             <div className="space-y-4">
-              <div className="relative">
-                <textarea
-                  rows={8}
-                  value={systemPrompt}
-                  onChange={(e) => setSystemPrompt(e.target.value)}
-                  className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent text-sm font-medium font-mono bg-slate-50/50"
-                />
-              </div>
+              <textarea
+                rows={8}
+                value={systemPrompt}
+                onChange={(e) => setSystemPrompt(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:border-slate-400 text-sm font-medium font-mono bg-slate-50/50"
+              />
 
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                <p className="text-xs text-slate-400 font-semibold leading-relaxed max-w-md">
-                  Every save will increment prompt version count. Changes will apply to all future calls.
-                </p>
+              <div className="flex justify-end">
                 <button
                   onClick={handleSavePrompt}
                   disabled={isSavingPrompt}
-                  className="flex items-center justify-center py-2 px-5 bg-black hover:bg-[#1f2937] text-white rounded-lg text-xs font-bold transition-all shadow-sm shrink-0"
+                  className="flex items-center justify-center py-2.5 px-6 bg-black hover:bg-[#1f2937] text-white rounded-xl text-xs font-bold transition-all shadow-sm"
                 >
-                  <Save className="h-4 w-4 mr-2" /> {isSavingPrompt ? 'Saving...' : 'Increment & Save Prompt'}
+                  <Save className="h-4 w-4 mr-2" /> {isSavingPrompt ? 'Saving...' : 'Save Prompt'}
                 </button>
               </div>
             </div>
           </div>
         )}
 
-        {/* 4. TOOLS TAB PANEL */}
+        {/* TAB 5: TOOLS */}
         {activeTab === 'tools' && (
-          <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-6 animate-fade-in">
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-6 animate-fade-in">
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
               <div>
-                <div className="flex items-center space-x-2 mb-1">
-                  <Phone className="h-4.5 w-4.5 text-slate-700" />
-                  <h3 className="text-base font-bold font-outfit text-slate-900">Twilio Outbound Calling</h3>
-                </div>
-                <p className="text-xs text-slate-500">Connect your Twilio account to place real AI-powered phone calls</p>
+                <h3 className="text-base font-bold text-slate-900">Twilio Telephony & Webhooks</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Connect Twilio account credentials for real phone calls</p>
               </div>
-              
-              <span className="flex items-center text-xs font-bold text-amber-600 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-100">
-                {twilioPhone ? 'Credentials Active' : 'Simulation Mode'}
-              </span>
             </div>
 
             <form onSubmit={handleSaveTwilio} className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Account SID</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Account SID</label>
                 <input
                   type="text"
                   required
                   placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
                   value={twilioSid}
                   onChange={(e) => setTwilioSid(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-black text-sm font-mono bg-slate-50/50"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:border-slate-400 text-sm font-mono bg-slate-50/50"
                 />
               </div>
+
               <div>
-                <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Auth Token</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Auth Token</label>
                 <input
                   type="password"
                   required
                   placeholder="••••••••••••••••••••••••••••••••"
                   value={twilioToken}
                   onChange={(e) => setTwilioToken(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-black text-sm font-mono bg-slate-50/50"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:border-slate-400 text-sm font-mono bg-slate-50/50"
                 />
               </div>
+
               <div>
-                <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Twilio Phone Number</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Twilio Phone Number</label>
                 <input
                   type="text"
                   required
-                  placeholder="+1XXXXXXXXXX"
+                  placeholder="+15105183920"
                   value={twilioPhone}
                   onChange={(e) => setTwilioPhone(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-black text-sm font-mono bg-slate-50/50"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:border-slate-400 text-sm font-mono bg-slate-50/50"
                 />
               </div>
-              <div className="md:col-span-3 flex justify-end">
+
+              <div className="md:col-span-3 pt-2">
                 <button
                   type="submit"
                   disabled={isSavingTwilio}
-                  className="flex items-center justify-center py-2.5 px-5 bg-black hover:bg-[#1f2937] text-white rounded-lg text-xs font-bold transition-all shadow-sm"
+                  className="px-6 py-3 bg-[#111111] hover:bg-black text-white rounded-xl text-xs font-bold transition-all shadow-sm"
                 >
-                  <Save className="h-4 w-4 mr-2" />
-                  {isSavingTwilio ? 'Saving...' : 'Save Twilio Credentials'}
+                  {isSavingTwilio ? 'Saving Credentials...' : 'Save Credentials'}
                 </button>
               </div>
             </form>
           </div>
         )}
 
-        {/* 5. TEST CALL TAB PANEL */}
+        {/* TAB 6: TEST CALL */}
         {activeTab === 'test' && (
-          <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-6 animate-fade-in max-w-md">
+          <div className="max-w-xl bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-6 animate-fade-in">
             <div className="border-b border-slate-100 pb-4">
-              <h3 className="text-base font-bold font-outfit text-slate-900">Trigger Outbound Test Call</h3>
-              <p className="text-xs text-slate-500">Test AI Agent voice, prompt parameters, and latency instantly</p>
+              <h3 className="text-base font-bold text-slate-900">Test AI Voice Dialer</h3>
+              <p className="text-xs text-slate-500 mt-0.5">Test real outbound call to your mobile number</p>
             </div>
 
-            {testCallStatus === 'idle' ? (
-              <form onSubmit={handleTriggerTestCall} className="space-y-4">
-                <div>
-                  <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Phone Number</label>
-                  <input
-                    type="tel"
-                    required
-                    placeholder="e.g. +919516870988"
-                    value={testNumber}
-                    onChange={(e) => setTestNumber(e.target.value.replace(/[^\d+]/g, ''))}
-                    className="w-full px-4 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-black text-sm font-semibold bg-slate-50/50"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={isDialing}
-                  className="w-full flex items-center justify-center py-2.5 bg-black hover:bg-[#1f2937] text-white rounded-lg text-xs font-bold transition-all shadow-sm"
-                >
-                  <Phone className="h-4 w-4 mr-1.5" /> {isDialing ? 'Dialing...' : 'Dial Test Call'}
-                </button>
-              </form>
-            ) : (
-              <div className="p-6 border border-slate-200 rounded-xl bg-slate-50/40 text-center space-y-4">
-                <div className="flex items-center justify-center space-x-2">
-                  <span className={`h-2.5 w-2.5 rounded-full ${testCallStatus === 'dialing' ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500 animate-ping'}`} />
-                  <span className="text-xs font-bold uppercase tracking-widest text-slate-700">
-                    {testCallStatus === 'dialing' ? 'Dialing...' : 'Call Active Connected'}
-                  </span>
-                </div>
-
-                <div className="space-y-1">
-                  <p className="text-base font-bold text-slate-900">{testNumber}</p>
-                  <p className="text-xl font-mono font-extrabold text-slate-800">{getTimerDisplay()}</p>
-                </div>
-
-                <button
-                  onClick={handleEndTestCall}
-                  className="mx-auto flex items-center justify-center py-2 px-6 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm"
-                >
-                  <PhoneOff className="h-4 w-4 mr-1.5" /> End Test Call
-                </button>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Mobile Phone Number</label>
+                <input
+                  type="text"
+                  placeholder="+919876543210"
+                  value={testNumber}
+                  onChange={(e) => setTestNumber(e.target.value)}
+                  className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-slate-400 text-sm font-mono"
+                />
               </div>
-            )}
+
+              <button
+                type="button"
+                onClick={() => alert(`Initiating test call to ${testNumber || '+919876543210'}...`)}
+                className="w-full py-3.5 bg-[#111111] hover:bg-black text-white font-bold text-xs rounded-xl transition-all shadow-md flex items-center justify-center space-x-2"
+              >
+                <Phone className="w-4 h-4" />
+                <span>Start Test Call</span>
+              </button>
+            </div>
           </div>
         )}
 

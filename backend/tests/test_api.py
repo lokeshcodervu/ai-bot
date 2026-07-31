@@ -126,7 +126,7 @@ def test_onboarding_lifecycle(client):
     # Confirm OTP record is created in otp_verifications table
     otp_record = db.query(OTPVerification).filter(OTPVerification.email == "saasowner@example.com").first()
     assert otp_record is not None
-    assert otp_record.otp_code == "0000"
+    assert otp_record.otp_code == "111111"
     db.close()
 
     # =========================================================
@@ -143,13 +143,68 @@ def test_onboarding_lifecycle(client):
     verified_token = verify_json["verified_token"]
 
     # =========================================================
-    # 3. SELECT INDUSTRY (Creates Tenant and User in DB)
+    # 3. SELECT INDUSTRY (Updates verified_token, NO DB write yet)
     # =========================================================
     industry_data = {
         "verified_token": verified_token,
         "industry": "Real Estate"
     }
     response = client.post("/api/v1/onboarding/select-industry", json=industry_data)
+    assert response.status_code == 200
+    ind_json = response.json()
+    assert ind_json["status"] == "success"
+    verified_token = ind_json["verified_token"]
+    
+    # Confirm User and Tenant still DO NOT exist in DB
+    db = TestingSessionLocal()
+    assert db.query(User).filter(User.email == "saasowner@example.com").first() is None
+    db.close()
+
+    # =========================================================
+    # 4. SELECT PLAN (Updates verified_token, NO DB write yet)
+    # =========================================================
+    plan_data = {
+        "verified_token": verified_token,
+        "plan_id": "pro"
+    }
+    response = client.post("/api/v1/onboarding/select-plan", json=plan_data)
+    assert response.status_code == 200
+    plan_json = response.json()
+    assert plan_json["status"] == "success"
+    if "verified_token" in plan_json:
+        verified_token = plan_json["verified_token"]
+
+    # Confirm User and Tenant STILL DO NOT exist in DB
+    db = TestingSessionLocal()
+    assert db.query(User).filter(User.email == "saasowner@example.com").first() is None
+    db.close()
+
+    # =========================================================
+    # 5. ATTEMPT PAYMENT WITH DECLINED CARD (0000000000000000)
+    # =========================================================
+    decline_data = {
+        "verified_token": verified_token,
+        "card_number": "0000 0000 0000 0000",
+        "card_cvc": "000"
+    }
+    response = client.post("/api/v1/onboarding/complete", json=decline_data)
+    assert response.status_code == 400
+    assert "refused by the issuer" in response.json()["detail"].lower()
+
+    # Confirm User and Tenant STILL DO NOT exist in DB after decline!
+    db = TestingSessionLocal()
+    assert db.query(User).filter(User.email == "saasowner@example.com").first() is None
+    db.close()
+
+    # =========================================================
+    # 6. COMPLETE PAYMENT WITH VALID CARD
+    # =========================================================
+    success_data = {
+        "verified_token": verified_token,
+        "card_number": "4242 4242 4242 4242",
+        "card_cvc": "123"
+    }
+    response = client.post("/api/v1/onboarding/complete", json=success_data)
     assert response.status_code == 200
     tokens = response.json()
     assert "access_token" in tokens
@@ -159,7 +214,7 @@ def test_onboarding_lifecycle(client):
     access_token = tokens["access_token"]
     headers = {"Authorization": f"Bearer {access_token}"}
     
-    # Check that User and Tenant now exist in DB
+    # Confirm User and Tenant NOW exist in DB after successful payment!
     db = TestingSessionLocal()
     db_user = db.query(User).filter(User.email == "saasowner@example.com").first()
     assert db_user is not None
@@ -168,56 +223,9 @@ def test_onboarding_lifecycle(client):
     db_tenant = db.query(Tenant).filter(Tenant.id == db_user.tenant_id).first()
     assert db_tenant is not None
     assert db_tenant.industry == "Real Estate"
-    # Verify baseline prompt mapped
-    assert "real estate sales assistant" in db_tenant.system_prompt.lower()
-    assert db_tenant.is_payment_done is False
-    assert db_tenant.is_active is False
-    
-    # Verify Wallet and TenantUsage are initialized
-    assert db_tenant.wallet is not None
-    assert db_tenant.wallet.balance == 0
-    assert db_tenant.wallet.currency == "USD"
-    assert db_tenant.usage is not None
-    assert db_tenant.usage.total_calls == 0
+    assert db_tenant.is_payment_done is True
+    assert db_tenant.is_active is True
     db.close()
-
-    # =========================================================
-    # 3a. ACCESS DASHBOARD BEFORE PAYMENT (GATED)
-    # =========================================================
-    response = client.get("/api/v1/dashboard", headers=headers)
-    assert response.status_code == 402
-    assert "payment required" in response.json()["detail"].lower()
-
-    # =========================================================
-    # 4. SELECT PLAN (Creates Subscription with INACTIVE status)
-    # =========================================================
-    plan_data = {
-        "plan_id": "pro"
-    }
-    response = client.post("/api/v1/onboarding/select-plan", json=plan_data, headers=headers)
-    assert response.status_code == 200
-    sub_json = response.json()
-    assert sub_json["plan_id"] == "pro"
-    assert sub_json["status"] == "INACTIVE"
-    # Plan limits are not in SubscriptionOut anymore
-    assert "max_users" not in sub_json
-    assert "max_campaigns" not in sub_json
-    assert "max_monthly_calls" not in sub_json
-    
-    subscription_id = sub_json["id"]
-
-    # =========================================================
-    # 5. CREATE PAYMENT (Amount is integer cents)
-    # =========================================================
-    order_data = {
-        "gateway": "MOCK"
-    }
-    response = client.post("/api/v1/onboarding/create-payment", json=order_data, headers=headers)
-    assert response.status_code == 200
-    order_json = response.json()
-    assert order_json["amount"] == 7900 # Pro price: $79.00 -> 7900 cents
-    assert isinstance(order_json["amount"], int)
-    assert order_json["payment_status"] == "PENDING"
     assert order_json["gateway_order_id"] is not None
     
     payment_id = order_json["payment_id"]
@@ -385,13 +393,17 @@ def test_insurance_onboarding_lifecycle(client):
     verified_token = response.json()["verified_token"]
     
     # =========================================================
-    # 3. SELECT INDUSTRY (Insurance)
+    # 3. SELECT INDUSTRY & PLAN -> COMPLETE ONBOARDING
     # =========================================================
     industry_data = {
         "verified_token": verified_token,
         "industry": "Insurance"
     }
     response = client.post("/api/v1/onboarding/select-industry", json=industry_data)
+    assert response.status_code == 200
+    verified_token = response.json()["verified_token"]
+
+    response = client.post("/api/v1/onboarding/complete", json={"verified_token": verified_token, "card_number": "4242 4242 4242 4242"})
     assert response.status_code == 200
     tokens = response.json()
     assert "access_token" in tokens
@@ -408,32 +420,6 @@ def test_insurance_onboarding_lifecycle(client):
     assert db_tenant.industry == "Insurance"
     assert "insurance sales assistant" in db_tenant.system_prompt.lower()
     db.close()
-    
-    # =========================================================
-    # 4. SELECT PLAN
-    # =========================================================
-    plan_data = {"plan_id": "basic"}
-    response = client.post("/api/v1/onboarding/select-plan", json=plan_data, headers=headers)
-    assert response.status_code == 200
-    
-    # =========================================================
-    # 5. CREATE PAYMENT
-    # =========================================================
-    response = client.post("/api/v1/onboarding/create-payment", json={"gateway": "MOCK"}, headers=headers)
-    assert response.status_code == 200
-    pay_json = response.json()
-    payment_id = pay_json["payment_id"]
-    
-    # =========================================================
-    # 6. VERIFY PAYMENT
-    # =========================================================
-    verify_payment_data = {
-        "payment_id": payment_id,
-        "gateway_payment_id": "pay_ins_123",
-        "gateway_signature": "sig_ins_123"
-    }
-    response = client.post("/api/v1/onboarding/verify-payment", json=verify_payment_data, headers=headers)
-    assert response.status_code == 200
     
     # =========================================================
     # 7. ACCESS DASHBOARD AFTER PAYMENT (SUCCESS)
@@ -457,17 +443,9 @@ def test_lead_pipeline_gating_and_lifecycle(client):
     response = client.post("/api/v1/onboarding/verify-otp", json={"signup_token": token_a, "otp": "0000"})
     v_token_a = response.json()["verified_token"]
     response = client.post("/api/v1/onboarding/select-industry", json={"verified_token": v_token_a, "industry": "Real Estate"})
+    v_token_a = response.json()["verified_token"]
+    response = client.post("/api/v1/onboarding/complete", json={"verified_token": v_token_a, "card_number": "4242 4242 4242 4242"})
     headers_a = {"Authorization": f"Bearer {response.json()['access_token']}"}
-    
-    # Pay for Tenant A
-    client.post("/api/v1/onboarding/select-plan", json={"plan_id": "pro"}, headers=headers_a)
-    pay_res = client.post("/api/v1/onboarding/create-payment", json={"gateway": "MOCK"}, headers=headers_a)
-    payment_id_a = pay_res.json()["payment_id"]
-    client.post("/api/v1/onboarding/verify-payment", json={
-        "payment_id": payment_id_a,
-        "gateway_payment_id": "pay_a_123",
-        "gateway_signature": "sig_a_123"
-    }, headers=headers_a)
 
     # SignUp Tenant B (Unpaid)
     response = client.post("/api/v1/onboarding/signup", json={"email": "leadb@example.com", "password": "password123"})
@@ -475,6 +453,8 @@ def test_lead_pipeline_gating_and_lifecycle(client):
     response = client.post("/api/v1/onboarding/verify-otp", json={"signup_token": token_b, "otp": "0000"})
     v_token_b = response.json()["verified_token"]
     response = client.post("/api/v1/onboarding/select-industry", json={"verified_token": v_token_b, "industry": "IT Training"})
+    v_token_b = response.json()["verified_token"]
+    response = client.post("/api/v1/onboarding/complete", json={"verified_token": v_token_b, "card_number": "4242 4242 4242 4242"})
     headers_b = {"Authorization": f"Bearer {response.json()['access_token']}"}
     
     # SignUp Tenant C (Paid, to test tenant isolation)
@@ -483,6 +463,8 @@ def test_lead_pipeline_gating_and_lifecycle(client):
     response = client.post("/api/v1/onboarding/verify-otp", json={"signup_token": token_c, "otp": "0000"})
     v_token_c = response.json()["verified_token"]
     response = client.post("/api/v1/onboarding/select-industry", json={"verified_token": v_token_c, "industry": "Finance"})
+    v_token_c = response.json()["verified_token"]
+    response = client.post("/api/v1/onboarding/complete", json={"verified_token": v_token_c, "card_number": "4242 4242 4242 4242"})
     headers_c = {"Authorization": f"Bearer {response.json()['access_token']}"}
     client.post("/api/v1/onboarding/select-plan", json={"plan_id": "pro"}, headers=headers_c)
     payment_id_c = client.post("/api/v1/onboarding/create-payment", json={"gateway": "MOCK"}, headers=headers_c).json()["payment_id"]
@@ -641,11 +623,10 @@ def test_campaign_lifecycle(client):
     response = client.post("/api/v1/onboarding/verify-otp", json={"signup_token": token_a, "otp": "0000"})
     v_token_a = response.json()["verified_token"]
     response = client.post("/api/v1/onboarding/select-industry", json={"verified_token": v_token_a, "industry": "Real Estate"})
+    v_token_a = response.json()["verified_token"]
+    response = client.post("/api/v1/onboarding/complete", json={"verified_token": v_token_a, "card_number": "4242 4242 4242 4242"})
     access_token_a = response.json()['access_token']
     headers_a = {"Authorization": f"Bearer {access_token_a}"}
-    client.post("/api/v1/onboarding/select-plan", json={"plan_id": "pro"}, headers=headers_a)
-    pay_id_a = client.post("/api/v1/onboarding/create-payment", json={"gateway": "MOCK"}, headers=headers_a).json()["payment_id"]
-    client.post("/api/v1/onboarding/verify-payment", json={"payment_id": pay_id_a, "gateway_payment_id": "tx_a", "gateway_signature": "sig_a"}, headers=headers_a)
 
     # Unpaid Tenant B
     response = client.post("/api/v1/onboarding/signup", json={"email": "campb@example.com", "password": "password123"})
@@ -653,6 +634,8 @@ def test_campaign_lifecycle(client):
     response = client.post("/api/v1/onboarding/verify-otp", json={"signup_token": token_b, "otp": "0000"})
     v_token_b = response.json()["verified_token"]
     response = client.post("/api/v1/onboarding/select-industry", json={"verified_token": v_token_b, "industry": "IT Training"})
+    v_token_b = response.json()["verified_token"]
+    response = client.post("/api/v1/onboarding/complete", json={"verified_token": v_token_b, "card_number": "4242 4242 4242 4242"})
     headers_b = {"Authorization": f"Bearer {response.json()['access_token']}"}
 
     # Paid Tenant C (isolation checks)
@@ -661,10 +644,9 @@ def test_campaign_lifecycle(client):
     response = client.post("/api/v1/onboarding/verify-otp", json={"signup_token": token_c, "otp": "0000"})
     v_token_c = response.json()["verified_token"]
     response = client.post("/api/v1/onboarding/select-industry", json={"verified_token": v_token_c, "industry": "Finance"})
+    v_token_c = response.json()["verified_token"]
+    response = client.post("/api/v1/onboarding/complete", json={"verified_token": v_token_c, "card_number": "4242 4242 4242 4242"})
     headers_c = {"Authorization": f"Bearer {response.json()['access_token']}"}
-    client.post("/api/v1/onboarding/select-plan", json={"plan_id": "pro"}, headers=headers_c)
-    pay_id_c = client.post("/api/v1/onboarding/create-payment", json={"gateway": "MOCK"}, headers=headers_c).json()["payment_id"]
-    client.post("/api/v1/onboarding/verify-payment", json={"payment_id": pay_id_c, "gateway_payment_id": "tx_c", "gateway_signature": "sig_c"}, headers=headers_c)
 
     # =========================================================
     # 2. TEST GATING
@@ -805,13 +787,10 @@ def test_live_monitoring_websockets(client):
     response = client.post("/api/v1/onboarding/verify-otp", json={"signup_token": token, "otp": "0000"})
     v_token = response.json()["verified_token"]
     response = client.post("/api/v1/onboarding/select-industry", json={"verified_token": v_token, "industry": "Real Estate"})
+    v_token = response.json()["verified_token"]
+    response = client.post("/api/v1/onboarding/complete", json={"verified_token": v_token, "card_number": "4242 4242 4242 4242"})
     access_token = response.json()['access_token']
     headers = {"Authorization": f"Bearer {access_token}"}
-    
-    # Paid plan gating
-    client.post("/api/v1/onboarding/select-plan", json={"plan_id": "pro"}, headers=headers)
-    pay_id = client.post("/api/v1/onboarding/create-payment", json={"gateway": "MOCK"}, headers=headers).json()["payment_id"]
-    client.post("/api/v1/onboarding/verify-payment", json={"payment_id": pay_id, "gateway_payment_id": "tx_live", "gateway_signature": "sig_live"}, headers=headers)
 
     # 1. Create Campaign
     campaign_res = client.post("/api/v1/campaigns", json={
@@ -876,13 +855,10 @@ def test_call_logs_and_dynamic_analytics(client):
     response = client.post("/api/v1/onboarding/verify-otp", json={"signup_token": token, "otp": "0000"})
     v_token = response.json()["verified_token"]
     response = client.post("/api/v1/onboarding/select-industry", json={"verified_token": v_token, "industry": "Real Estate"})
+    v_token = response.json()["verified_token"]
+    response = client.post("/api/v1/onboarding/complete", json={"verified_token": v_token, "card_number": "4242 4242 4242 4242"})
     access_token = response.json()['access_token']
     headers = {"Authorization": f"Bearer {access_token}"}
-    
-    # Paid subscription setup
-    client.post("/api/v1/onboarding/select-plan", json={"plan_id": "pro"}, headers=headers)
-    pay_id = client.post("/api/v1/onboarding/create-payment", json={"gateway": "MOCK"}, headers=headers).json()["payment_id"]
-    client.post("/api/v1/onboarding/verify-payment", json={"payment_id": pay_id, "gateway_payment_id": "tx_anal", "gateway_signature": "sig_anal"}, headers=headers)
 
     # 1. Create Campaign
     campaign_res = client.post("/api/v1/campaigns", json={

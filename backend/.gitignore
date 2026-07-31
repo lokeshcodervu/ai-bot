@@ -143,3 +143,6 @@ desktop.ini
 
 # Scratch scripts and temporary testing outputs
 scratch/
+test_keys.py
+test_e2e_simulation.py
+

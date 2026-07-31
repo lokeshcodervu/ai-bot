@@ -30,9 +30,7 @@ interface ActiveCall {
   transcript: TranscriptItem[];
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || (typeof window !== 'undefined'
-  ? `${window.location.protocol}//${window.location.hostname}:8000/api/v1`
-  : 'http://localhost:8000/api/v1');
+import API_BASE from '../../../config/api';
 
 const WS_BASE = API_BASE.replace(/^http/, 'ws');
 

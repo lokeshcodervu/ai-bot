@@ -3,6 +3,12 @@
 .env.*
 .env.local
 
+# Test scripts & API key tests
+test_keys.py
+test_e2e_simulation.py
+backend/test_keys.py
+
+
 # Node modules
 node_modules/
 

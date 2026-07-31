@@ -3,6 +3,6 @@
 import React from 'react';
 import { AuthFlow } from '../../components/auth/AuthFlow';
 
-export default function LoginPage() {
-  return <AuthFlow initialView="login" />;
+export default function SignupPage() {
+  return <AuthFlow initialView="signup" />;
 }

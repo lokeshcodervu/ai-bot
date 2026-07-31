@@ -23,9 +23,7 @@ import {
   ArrowUpRight
 } from 'lucide-react';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || (typeof window !== 'undefined'
-  ? `${window.location.protocol}//${window.location.hostname}:8000/api/v1`
-  : 'http://localhost:8000/api/v1');
+import API_BASE from '../../config/api';
 
 const formatRole = (role?: string) => {
   if (!role) return 'Admin';
@@ -127,19 +125,19 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     }
   };
 
+  // Nav Items matching Figma design (AI Configuration removed from sidebar, integrated into Settings)
   const navItems = [
     { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
     { name: 'Campaigns', path: '/dashboard/campaigns', icon: Megaphone },
     { name: 'Leads', path: '/dashboard/leads', icon: Users },
     { name: 'Live Monitor', path: '/dashboard/live-monitor', icon: Radio },
     { name: 'Call Logs', path: '/dashboard/call-logs', icon: PhoneCall },
-    { name: 'AI Configuration', path: '/dashboard/settings', icon: Settings },
     { name: 'Analytics', path: '/dashboard/analytics', icon: LineChart },
-    { name: 'User Management', path: '/dashboard/user-management', icon: UserCheck },
-    { name: 'Compilance', path: '/dashboard/compliance', icon: ShieldCheck },
+    { name: 'User Management', path: '#user-management', icon: UserCheck },
+    { name: 'Compilance', path: '#compliance', icon: ShieldCheck },
     { name: 'Billing', path: '#billing', icon: CreditCard },
     { name: 'Super Admin', path: '#super-admin', icon: Award },
-    { name: 'Settings', path: '#settings-page', icon: Settings },
+    { name: 'Settings', path: '/dashboard/settings', icon: Settings },
   ];
 
   const handleNavClick = (item: typeof navItems[0]) => {
@@ -154,9 +152,13 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const renderSidebarContent = () => (
     <div className="flex flex-col h-full bg-white text-[#0f172a] select-none">
       {/* Brand logo matching image */}
-      <div className="h-20 flex items-center px-8 border-b border-slate-100">
-        <span className="font-outfit font-extrabold text-3xl tracking-tight text-black">
+      <div className="h-20 flex items-center justify-between px-8 border-b border-slate-100">
+        <span className="font-outfit font-extrabold text-2xl tracking-tight text-black">
           Logo
+        </span>
+        <span className="inline-flex items-center space-x-1 px-2.5 py-1 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-full text-[11px] font-semibold">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          <span>AI Ready</span>
         </span>
       </div>
 
@@ -169,10 +171,11 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             <button
               key={item.name}
               onClick={() => handleNavClick(item)}
-              className={`w-full flex items-center px-4 py-3 rounded-lg text-sm font-semibold transition-all duration-150 ${isActive
+              className={`w-full flex items-center px-4 py-3 rounded-lg text-sm font-semibold transition-all duration-150 ${
+                isActive
                   ? 'bg-[#111111] text-white shadow-sm'
                   : 'text-[#475569] hover:text-black hover:bg-[#f1f5f9]'
-                }`}
+              }`}
             >
               <Icon className={`h-5 w-5 mr-3.5 ${isActive ? 'text-white' : 'text-[#94a3b8]'}`} />
               {item.name}
@@ -184,20 +187,12 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       {/* User Session Footer matches design */}
       <div className="p-5 border-t border-slate-100 flex items-center justify-between">
         <div className="flex items-center space-x-3.5 min-w-0">
-          <div className="h-10 w-10 rounded-full border border-slate-200 overflow-hidden bg-slate-50 flex-shrink-0">
-            <img
-              src="/user_avatar.png"
-              alt={`${user?.full_name || user?.username || 'User'} Avatar`}
-              className="h-full w-full object-cover"
-              onError={(e) => {
-                // Fallback if image doesn't load
-                (e.target as HTMLElement).style.display = 'none';
-              }}
-            />
+          <div className="h-10 w-10 rounded-full border border-slate-200 overflow-hidden bg-slate-100 flex-shrink-0 flex items-center justify-center font-bold text-slate-700">
+            {user?.full_name?.charAt(0) || user?.username?.charAt(0) || 'R'}
           </div>
           <div className="min-w-0">
             <p className="text-sm font-bold text-black truncate leading-tight">
-              {user?.full_name || user?.username || 'Loading...'}
+              {user?.full_name || 'Rahul Agarwal'}
             </p>
             <p className="text-xs text-slate-500 font-medium leading-normal">
               {formatRole(user?.role)}
@@ -238,7 +233,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
               <Menu className="h-6 w-6" />
             </button>
 
-            {/* Sidebar toggle icon (decoration as seen on design next to the header title) */}
+            {/* Sidebar toggle icon */}
             <button className="hidden lg:block p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-50 rounded-lg transition-colors">
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h10M4 18h16" />

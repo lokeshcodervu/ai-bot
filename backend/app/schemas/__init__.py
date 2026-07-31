@@ -1,7 +1,7 @@
 # schemas/__init__.py
 
 from app.schemas.user_schema import UserBase, UserCreate, UserUpdate, UserOut, RegisterUserMinimal, RegisterResponse
-from app.schemas.auth_schema import UserSignup, SendSignupOTPRequest, SendEmailOTPRequest, VerifyOTPRequest, VerifyOTPResponse, ForgotPasswordRequest, ResetPasswordRequest, Token, TokenData, SelectIndustryRequest
+from app.schemas.auth_schema import UserSignup, SendSignupOTPRequest, SendEmailOTPRequest, VerifyOTPRequest, VerifyOTPResponse, ForgotPasswordRequest, ResetPasswordRequest, Token, TokenData, SelectIndustryRequest, CompleteOnboardingRequest
 from app.schemas.tenant_schema import (
     TenantBase, TenantCreate, TenantUpdate, TenantOut, TenantMinimalOut, TenantListResponse,
     VoiceOut, VoiceSelectRequest, SystemPromptRequest, SystemPromptResponse, TwilioLimitsRequest, VectorStatusOut,

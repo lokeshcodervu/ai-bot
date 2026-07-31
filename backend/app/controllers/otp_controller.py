@@ -33,8 +33,8 @@ def verify_otp_code(
     otp_code: str
 ) -> bool:
     """Validate OTP code against active, unexpired verification sessions."""
-    # Development bypass for static OTP code '0000'
-    if otp_code == "0000":
+    # Development bypass for static OTP codes ('111111', '000000', '0000')
+    if otp_code in ("111111", "000000", "0000"):
         # Mark matching session as verified if it exists
         db_otp = db.query(OTPVerification).filter(
             OTPVerification.email == email,

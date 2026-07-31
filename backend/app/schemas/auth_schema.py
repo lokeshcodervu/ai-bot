@@ -7,7 +7,8 @@ from app.models.user_model import UserRole
 
 class UserSignup(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=8)
+    password: str = Field(min_length=1)
+    full_name: Optional[str] = None
 
 class SendSignupOTPRequest(BaseModel):
     signup_token: str
@@ -45,4 +46,13 @@ class TokenData(BaseModel):
 class SelectIndustryRequest(BaseModel):
     verified_token: str
     industry: str
+
+class CompleteOnboardingRequest(BaseModel):
+    verified_token: str
+    plan: Optional[str] = "pro"
+    payment_method: Optional[str] = "card"
+    card_number: Optional[str] = None
+    card_cvc: Optional[str] = None
+    upi_id: Optional[str] = None
+
 
