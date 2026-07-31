@@ -1154,15 +1154,22 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
     try:
         campaign = None
         if campaign_id and campaign_id != "single-call":
-            campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+            try:
+                uuid.UUID(str(campaign_id))
+                campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+            except Exception:
+                campaign = None
             
-        lead = db.query(Lead).filter(Lead.id == lead_id).first()
+        lead = None
+        if lead_id:
+            try:
+                uuid.UUID(str(lead_id))
+                lead = db.query(Lead).filter(Lead.id == lead_id).first()
+            except Exception:
+                lead = None
+
         if not lead:
             print("[TELEPHONY ERROR] Lead not found in DB.")
-            return
-            
-        if campaign_id != "single-call" and not campaign:
-            print("[TELEPHONY ERROR] Campaign not found in DB.")
             return
             
         tenant_id = campaign.tenant_id if campaign else lead.tenant_id
