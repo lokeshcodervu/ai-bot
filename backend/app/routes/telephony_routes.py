@@ -56,6 +56,9 @@ def outbound_twiml(campaign_id: str, lead_id: str):
     ET.SubElement(stream_el, "Parameter", name="lead_id", value=lead_id)
     ET.SubElement(stream_el, "Parameter", name="language", value="auto")
     
+    # Keep call active for 1 hour so DTMF keypresses or pauses do NOT hang up the call
+    ET.SubElement(response_el, "Pause", length="3600")
+    
     twiml_xml = ET.tostring(response_el, encoding="utf-8", method="xml").decode("utf-8")
     
     return Response(

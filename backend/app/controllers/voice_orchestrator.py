@@ -1127,7 +1127,8 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
     
     # 1. Wait for Twilio handshake connection START event
     try:
-        async for message in twilio_ws.iter_text():
+        while True:
+            message = await twilio_ws.receive_text()
             packet = json.loads(message)
             event_type = packet.get("event")
             
@@ -1312,12 +1313,17 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
             # Helper: Forward Twilio Inbound call audio to Deepgram
             async def forward_audio_to_deepgram():
                 try:
-                    async for message in twilio_ws.iter_text():
+                    while True:
+                        message = await twilio_ws.receive_text()
                         packet = json.loads(message)
                         if packet.get("event") == "media":
                             payload = packet["media"]["payload"]
                             raw_audio = base64.b64decode(payload)
                             await dg_ws.send(raw_audio)
+                        elif packet.get("event") == "dtmf":
+                            digit = packet.get("dtmf", {}).get("digit")
+                            print(f"[TELEPHONY DTMF] Received keypress digit from user: '{digit}'")
+                            sys.stdout.flush()
                         elif packet.get("event") == "stop":
                             print("[TELEPHONY] Stop event received from Twilio.")
                             break
