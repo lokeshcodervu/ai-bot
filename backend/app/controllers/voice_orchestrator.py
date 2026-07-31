@@ -1498,6 +1498,10 @@ async def render_sarvam_tts_and_send_to_twilio(text: str, voice_id: str, twilio_
                             print(f"[SARVAM TTS] Preceding task wait failed: {e}")
                             
                     raw_audio = base64.b64decode(audio_base64)
+                    # Strip 44-byte WAV RIFF header if present so Twilio receives pure mu-law audio
+                    if raw_audio.startswith(b"RIFF"):
+                        raw_audio = raw_audio[44:]
+
                     chunk_size = 1280  # 160ms of 8000 Hz mu-law audio
                     for i in range(0, len(raw_audio), chunk_size):
                         chunk = raw_audio[i:i + chunk_size]
