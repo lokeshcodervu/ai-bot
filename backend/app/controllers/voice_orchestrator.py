@@ -1512,7 +1512,7 @@ async def render_sarvam_tts_and_send_to_twilio(text: str, voice_id: str, twilio_
     lang_code = "hi-IN" if has_hindi else "en-IN"
     
     # Map selected voice_id to a valid Sarvam speaker (or default to aditya)
-    speaker = map_to_sarvam_speaker(voice_id)
+    speaker = map_to_sarvam_speaker(voice_id, is_female=True)
     print(f"[SARVAM AI] Rendering TTS: speaker={speaker}, language={lang_code}, text={text[:50]}...")
 
     payload = {
