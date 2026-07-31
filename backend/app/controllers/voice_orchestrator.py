@@ -1270,6 +1270,9 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
             if tts_client and tts_client.is_connected:
                 tts_listener_task = asyncio.create_task(tts_client.listen_loop(twilio_ws, stream_sid))
 
+            # Small 200ms pause for Twilio audio stream jitter buffer stabilization
+            await asyncio.sleep(0.2)
+
             # Trigger dynamic welcome greeting based on prompt persona and chosen language
             user_name = lead.name if lead else "there"
             company_name = tenant.company_name if (tenant and tenant.company_name) else "SecureLife Insurance"
