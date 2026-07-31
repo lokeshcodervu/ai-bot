@@ -1548,7 +1548,7 @@ async def render_tts_and_send_to_twilio(text: str, voice_id: str, twilio_ws: Web
             await el_ws.send(json.dumps({
                 "text": " ",
                 "model_id": "eleven_multilingual_v2",
-                "voice_settings": {"stability": 0.4, "similarity_boost": 0.6, "style": 0.7},
+                "voice_settings": {"stability": 0.4, "similarity_boost": 0.6, "speed": 1.2},
                 "xi_api_key": elevenlabs_key
             }))
             await el_ws.send(json.dumps({
