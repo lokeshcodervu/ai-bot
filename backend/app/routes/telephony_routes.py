@@ -304,7 +304,7 @@ def call_single_lead(
                 url=twiml_url,
                 record=True,
                 status_callback=f"{callback_base}/api/v1/telephony/status-callback?lead_id={lead.id}&campaign_id={campaign_id_str}",
-                status_callback_event=["completed", "busy", "no-answer", "failed", "canceled"],
+                status_callback_event=["initiated", "ringing", "answered", "completed"],
                 status_callback_method="POST"
             )
             lead.status = LeadStatus.CONNECTED
