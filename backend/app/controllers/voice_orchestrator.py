@@ -1210,7 +1210,7 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
             
         industry_type = tenant.industry if (tenant and tenant.industry) else "Insurance"
         voice_speed = tenant.voice_speed if (tenant and tenant.voice_speed and tenant.voice_speed > 0) else 1.25
-        tts_provider = tenant.settings.get("tts_provider", "ELEVENLABS") if (tenant and tenant.settings and isinstance(tenant.settings, dict)) else "ELEVENLABS"
+        tts_provider = tenant.settings.get("tts_provider", "SARVAM") if (tenant and tenant.settings and isinstance(tenant.settings, dict)) else "SARVAM"
         acknowledgment_enabled = tenant.settings.get("acknowledgment_enabled", False) if (tenant and tenant.settings and isinstance(tenant.settings, dict)) else False
         response_delay_enabled = tenant.settings.get("response_delay_enabled", False) if (tenant and tenant.settings and isinstance(tenant.settings, dict)) else False
     finally:
