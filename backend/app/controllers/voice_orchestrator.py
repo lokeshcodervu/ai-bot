@@ -7,6 +7,7 @@ import re
 import base64
 import asyncio
 import time
+import uuid
 from typing import Dict, Any, List
 from fastapi import WebSocket
 from sqlalchemy.orm import sessionmaker
@@ -130,6 +131,7 @@ class PersistentElevenLabsTTS:
     async def listen_loop(self, twilio_ws: WebSocket, stream_sid: str):
         self.twilio_ws = twilio_ws
         self.current_stream_sid = stream_sid
+        first_packet_sent = False
         while True:
             try:
                 # If we're disconnected or not initialized, wait briefly
@@ -152,6 +154,10 @@ class PersistentElevenLabsTTS:
                             }
                         }
                         await self.twilio_ws.send_json(media_payload)
+                        if not first_packet_sent:
+                            print("[TELEPHONY] First audio packet sent back to Twilio (persistent stream).")
+                            sys.stdout.flush()
+                            first_packet_sent = True
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -232,6 +238,7 @@ class PersistentSarvamTTS:
     async def listen_loop(self, twilio_ws: WebSocket, stream_sid: str):
         self.twilio_ws = twilio_ws
         self.current_stream_sid = stream_sid
+        first_packet_sent = False
         while True:
             try:
                 if not self.is_connected or not self.sarvam_ws:
@@ -255,6 +262,10 @@ class PersistentSarvamTTS:
                                 }
                             }
                             await self.twilio_ws.send_json(media_payload)
+                            if not first_packet_sent:
+                                print("[TELEPHONY] First audio packet sent back to Twilio (persistent stream).")
+                                sys.stdout.flush()
+                                first_packet_sent = True
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -1152,22 +1163,45 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
 
     # 2. Setup Database Session & Load configurations
     db = db_session_factory()
+    import uuid
     try:
         campaign = None
         if campaign_id and campaign_id != "single-call":
             try:
-                uuid.UUID(str(campaign_id))
-                campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
-            except Exception:
-                campaign = None
+                campaign_uuid = uuid.UUID(str(campaign_id))
+                campaign = db.query(Campaign).filter(Campaign.id == campaign_uuid).first()
+                if not campaign:
+                    print(f"[TELEPHONY ERROR] Campaign not found in database for campaign_id: {campaign_uuid}")
+                    sys.stdout.flush()
+                    db.close()
+                    return
+                campaign_id = campaign_uuid
+                print(f"[TELEPHONY] Campaign loaded successfully: {campaign.name} ({campaign.id})")
+                sys.stdout.flush()
+            except Exception as e:
+                print(f"[TELEPHONY ERROR] Invalid campaign_id format or query error: {e}")
+                sys.stdout.flush()
+                db.close()
+                return
             
         lead = None
         if lead_id:
             try:
-                uuid.UUID(str(lead_id))
-                lead = db.query(Lead).filter(Lead.id == lead_id).first()
-            except Exception:
-                lead = None
+                lead_uuid = uuid.UUID(str(lead_id))
+                lead = db.query(Lead).filter(Lead.id == lead_uuid).first()
+                if not lead:
+                    print(f"[TELEPHONY ERROR] Lead not found in database for lead_id: {lead_uuid}")
+                    sys.stdout.flush()
+                    db.close()
+                    return
+                lead_id = lead_uuid
+                print(f"[TELEPHONY] Lead loaded successfully: {lead.name} ({lead.id})")
+                sys.stdout.flush()
+            except Exception as e:
+                print(f"[TELEPHONY ERROR] Invalid lead_id format or query error: {e}")
+                sys.stdout.flush()
+                db.close()
+                return
 
         import datetime
         lead.status = LeadStatus.CONNECTED
@@ -1184,9 +1218,16 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
             })
         except Exception as pub_err:
             print(f"[TELEPHONY] PubSub connect update error: {pub_err}")
+            sys.stdout.flush()
 
         tenant_id = campaign.tenant_id if campaign else lead.tenant_id
         tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+        if not tenant:
+            print(f"[TELEPHONY ERROR] Tenant not found in database for tenant_id: {tenant_id}")
+            sys.stdout.flush()
+            db.close()
+            return
+        voice_id = tenant.voice_id if (tenant and tenant.voice_id) else "21m00Tcm4TlvDq8ikWAM"
         
         # Load system prompts & voices
         db_prompt = db.query(PromptVersion).filter(
@@ -1229,7 +1270,7 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
             selected_language = tenant.settings["default_language"]
             
         industry_type = tenant.industry if (tenant and tenant.industry) else "Insurance"
-        voice_speed = tenant.voice_speed if (tenant and tenant.voice_speed and tenant.voice_speed > 0) else 1.25
+        voice_speed = float(tenant.voice_speed) if (tenant and tenant.voice_speed and tenant.voice_speed > 0) else 1.12
         tts_provider = tenant.settings.get("tts_provider", "SARVAM") if (tenant and tenant.settings and isinstance(tenant.settings, dict)) else "SARVAM"
         acknowledgment_enabled = tenant.settings.get("acknowledgment_enabled", False) if (tenant and tenant.settings and isinstance(tenant.settings, dict)) else False
         response_delay_enabled = tenant.settings.get("response_delay_enabled", False) if (tenant and tenant.settings and isinstance(tenant.settings, dict)) else False
@@ -1283,6 +1324,7 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
         async with websockets.connect(dg_url, additional_headers=dg_headers) as dg_ws:
             
             print("[TELEPHONY] Integrations connected successfully. Ready to stream.")
+            print("[TELEPHONY] Deepgram connection established.")
             sys.stdout.flush()
 
             # Start persistent ElevenLabs WebSocket listen loop if active
@@ -1306,7 +1348,7 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
                 greeting = f"Hello! Am I speaking with {user_name}? I am {agent_name} from {company_name}. Hope I am not disturbing you. Do you have 30 seconds?"
                 
             print(f"[TELEPHONY] Sending initial greeting: {greeting}")
-            tts_task = asyncio.create_task(render_tts_and_send_to_twilio(greeting, voice_id, twilio_ws, stream_sid, tts_provider))
+            tts_task = asyncio.create_task(render_tts_and_send_to_twilio(greeting, voice_id, twilio_ws, stream_sid, tts_provider, pace=voice_speed))
             active_tts_tasks.append(tts_task)
                 
             conversation_history.append({"role": "assistant", "content": greeting})
@@ -1376,7 +1418,7 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
                                 if acknowledgment_enabled:
                                     ack_text = "hmm okay..."
                                     ack_task = asyncio.create_task(
-                                        render_tts_and_send_to_twilio(ack_text, voice_id, twilio_ws, stream_sid, tts_provider)
+                                        render_tts_and_send_to_twilio(ack_text, voice_id, twilio_ws, stream_sid, tts_provider, pace=voice_speed)
                                     )
                                     active_tts_tasks.append(ack_task)
                                 
@@ -1409,7 +1451,7 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
                                 print(f"[LLM AGENT] Clean reply: {final_reply}")
 
                                 # Render TTS and send audio to Twilio
-                                tts_task = asyncio.create_task(render_tts_and_send_to_twilio(final_reply, voice_id, twilio_ws, stream_sid, tts_provider))
+                                tts_task = asyncio.create_task(render_tts_and_send_to_twilio(final_reply, voice_id, twilio_ws, stream_sid, tts_provider, pace=voice_speed))
                                 active_tts_tasks.append(tts_task)
                                 
                                 # Save history turn
@@ -1431,7 +1473,8 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
                                             twilio_ws, 
                                             stream_sid, 
                                             tts_provider, 
-                                            wait_for_task=ack_task
+                                            wait_for_task=ack_task,
+                                            pace=voice_speed
                                         )
                                     )
                                     active_tts_tasks.append(tts_task)
@@ -1468,7 +1511,7 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
         # Save Call Logs to database on completion
         await save_telephony_call_log(db_session_factory, tenant_id, campaign_id, lead_id, conversation_history, call_sid)
 
-async def render_sarvam_tts_and_send_to_twilio(text: str, voice_id: str, twilio_ws: WebSocket, stream_sid: str, wait_for_task: asyncio.Task = None):
+async def render_sarvam_tts_and_send_to_twilio(text: str, voice_id: str, twilio_ws: WebSocket, stream_sid: str, wait_for_task: asyncio.Task = None, pace: float = 1.05):
     """
     Renders text to speech using Sarvam AI REST API,
     and sends Base64 media packets to Twilio call socket.
@@ -1476,9 +1519,6 @@ async def render_sarvam_tts_and_send_to_twilio(text: str, voice_id: str, twilio_
     import httpx
     
     sarvam_key = os.getenv("SARVAM_AI_KEY") or getattr(settings, "SARVAM_AI_KEY", "") or "sk_e4q39fpc_I2KMoKcW5rWAJuJ78tNOyf49"
-    if not sarvam_key:
-        raise Exception("SARVAM_AI_KEY is missing from environment.")
-        
     url = "https://api.sarvam.ai/text-to-speech"
     headers = {
         "api-subscription-key": sarvam_key,
@@ -1491,6 +1531,8 @@ async def render_sarvam_tts_and_send_to_twilio(text: str, voice_id: str, twilio_
     # Map selected voice_id to a valid Sarvam speaker (or default to aditya)
     speaker = map_to_sarvam_speaker(voice_id, is_female=True)
     print(f"[SARVAM AI] Rendering TTS: speaker={speaker}, language={lang_code}, text={text[:50]}...")
+    print(f"[TTS] TTS generation started for text: {text[:50]}...")
+    sys.stdout.flush()
 
     payload = {
         "text": text,
@@ -1499,7 +1541,7 @@ async def render_sarvam_tts_and_send_to_twilio(text: str, voice_id: str, twilio_
         "target_language_code": lang_code,
         "speech_sample_rate": 8000,
         "output_audio_codec": "mulaw",
-        "pace": 1.25
+        "pace": pace
     }
     
     try:
@@ -1534,6 +1576,9 @@ async def render_sarvam_tts_and_send_to_twilio(text: str, voice_id: str, twilio_
                             }
                         }
                         await twilio_ws.send_json(media_payload)
+                        if i == 0:
+                            print("[TELEPHONY] First audio packet sent back to Twilio.")
+                            sys.stdout.flush()
                         await asyncio.sleep(0.02)  # Paced frame streaming for real-time delivery
                 else:
                     raise Exception("Sarvam API returned empty audios array.")
@@ -1546,7 +1591,7 @@ async def render_sarvam_tts_and_send_to_twilio(text: str, voice_id: str, twilio_
         print(f"[SARVAM TTS ERROR] Exception in Sarvam rendering: {str(e)}")
         raise e
 
-async def render_tts_and_send_to_twilio(text: str, voice_id: str, twilio_ws: WebSocket, stream_sid: str, tts_provider: str = "ELEVENLABS", wait_for_task: asyncio.Task = None):
+async def render_tts_and_send_to_twilio(text: str, voice_id: str, twilio_ws: WebSocket, stream_sid: str, tts_provider: str = "ELEVENLABS", wait_for_task: asyncio.Task = None, pace: float = 1.05):
     """
     Pipes text segments to ElevenLabs or Sarvam AI, reads returned Mu-law audio, 
     and sends Base64 media packets to Twilio call socket. Supports automatic provider fallback.
@@ -1555,6 +1600,8 @@ async def render_tts_and_send_to_twilio(text: str, voice_id: str, twilio_ws: Web
     sarvam_key = os.getenv("SARVAM_AI_KEY") or getattr(settings, "SARVAM_AI_KEY", "") or "sk_e4q39fpc_I2KMoKcW5rWAJuJ78tNOyf49"
 
     print(f"[TTS CONFIG] active_provider={tts_provider}, selected_voice={voice_id}")
+    print(f"[TTS] TTS generation started for text: {text[:50]}...")
+    sys.stdout.flush()
 
     async def try_elevenlabs(v_id):
         if not elevenlabs_key:
@@ -1572,7 +1619,7 @@ async def render_tts_and_send_to_twilio(text: str, voice_id: str, twilio_ws: Web
             await el_ws.send(json.dumps({
                 "text": " ",
                 "model_id": "eleven_multilingual_v2",
-                "voice_settings": {"stability": 0.4, "similarity_boost": 0.6, "speed": 1.2},
+                "voice_settings": {"stability": 0.4, "similarity_boost": 0.6, "speed": 1.1},
                 "xi_api_key": elevenlabs_key
             }))
             await el_ws.send(json.dumps({
@@ -1584,6 +1631,7 @@ async def render_tts_and_send_to_twilio(text: str, voice_id: str, twilio_ws: Web
             }))
             
             has_awaited = False
+            first_packet_sent = False
             while True:
                 response = await el_ws.recv()
                 data = json.loads(response)
@@ -1604,6 +1652,10 @@ async def render_tts_and_send_to_twilio(text: str, voice_id: str, twilio_ws: Web
                         }
                     }
                     await twilio_ws.send_json(media_payload)
+                    if not first_packet_sent:
+                        print("[TELEPHONY] First audio packet sent back to Twilio.")
+                        sys.stdout.flush()
+                        first_packet_sent = True
                 if data.get("isFinal", False):
                     break
 
@@ -1613,7 +1665,7 @@ async def render_tts_and_send_to_twilio(text: str, voice_id: str, twilio_ws: Web
     try:
         if use_sarvam:
             print("[TTS] Primary attempt: Sarvam AI...")
-            await render_sarvam_tts_and_send_to_twilio(text, voice_id, twilio_ws, stream_sid, wait_for_task)
+            await render_sarvam_tts_and_send_to_twilio(text, voice_id, twilio_ws, stream_sid, wait_for_task, pace)
         else:
             print("[TTS] Primary attempt: ElevenLabs...")
             await try_elevenlabs(voice_id)
@@ -1631,7 +1683,7 @@ async def render_tts_and_send_to_twilio(text: str, voice_id: str, twilio_ws: Web
             else:
                 fallback_voice = "ritu"
                 print(f"[TTS FALLBACK] Falling back to Sarvam AI with speaker={fallback_voice}...")
-                await render_sarvam_tts_and_send_to_twilio(text, fallback_voice, twilio_ws, stream_sid, wait_for_task)
+                await render_sarvam_tts_and_send_to_twilio(text, fallback_voice, twilio_ws, stream_sid, wait_for_task, pace)
         except asyncio.CancelledError:
             raise
         except Exception as fallback_err:
