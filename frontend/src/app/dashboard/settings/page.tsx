@@ -102,6 +102,7 @@ export default function SettingsPage() {
         setPromptVersion(profile.system_prompt_version || 1);
         setSelectedVoiceId(profile.voice_id || 'v-neha');
         setTwilioPhone(profile.twilio_phone_number || '');
+        setWebsite(profile.website || (profile.settings && profile.settings.website) || 'codervu.com');
         if (profile.settings) {
           if (profile.settings.tts_provider) {
             setTtsProvider(profile.settings.tts_provider);
@@ -185,9 +186,9 @@ export default function SettingsPage() {
         body: JSON.stringify({
           company_name: companyName,
           timezone: timezone,
+          website: website,
           settings: {
             tts_provider: ttsProvider,
-            website: website,
             custom_greeting: customGreeting
           }
         })
@@ -468,6 +469,22 @@ export default function SettingsPage() {
                 </div>
               </div>
 
+              {/* Field 4: Initial Greeting (Introduction) */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  AI Initial Greeting (Introduction)
+                </label>
+                <textarea
+                  value={customGreeting}
+                  onChange={(e) => setCustomGreeting(e.target.value)}
+                  placeholder="e.g. Hello, namaste! Kya main {user_name} se baat kar rahi hoon? Main {agent_name} bol rahi hoon, {company_name} se."
+                  rows={3}
+                  className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-slate-400 text-sm font-medium text-slate-900 shadow-2xs transition-colors resize-none"
+                />
+                <span className="text-[10px] text-slate-400 mt-1.5 block leading-normal">
+                  You can use dynamic placeholders: <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-600 font-mono text-[9px]">{`{user_name}`}</code>, <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-600 font-mono text-[9px]">{`{agent_name}`}</code>, and <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-600 font-mono text-[9px]">{`{company_name}`}</code>.
+                </span>
+              </div>
 
               {/* Submit Button: Save Changes */}
               <div className="pt-2">

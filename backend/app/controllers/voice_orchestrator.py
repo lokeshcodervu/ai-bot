@@ -1274,6 +1274,8 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
         tts_provider = tenant.settings.get("tts_provider", "SARVAM") if (tenant and tenant.settings and isinstance(tenant.settings, dict)) else "SARVAM"
         acknowledgment_enabled = tenant.settings.get("acknowledgment_enabled", False) if (tenant and tenant.settings and isinstance(tenant.settings, dict)) else False
         response_delay_enabled = tenant.settings.get("response_delay_enabled", False) if (tenant and tenant.settings and isinstance(tenant.settings, dict)) else False
+        custom_greeting_template = tenant.settings.get("custom_greeting", "") if (tenant and tenant.settings and isinstance(tenant.settings, dict)) else ""
+        company_name = tenant.company_name if tenant else "SecureLife Insurance"
     finally:
         db.close()
 
@@ -1337,15 +1339,19 @@ async def handle_media_stream(twilio_ws: WebSocket, db_session_factory):
 
             # Trigger dynamic welcome greeting based on prompt persona and chosen language
             user_name = lead.name if lead else "there"
-            company_name = tenant.company_name if (tenant and tenant.company_name) else "SecureLife Insurance"
 
-            if selected_language == "auto" or selected_language == "hindi":
-                if is_female:
-                    greeting = f"Hello, namaste! Kya main {user_name} se baat kar rahi hoon? Main {agent_name} bol rahi hoon, {company_name} se. Main aapko disturb toh nahi kar rahi? 30 seconds ka time milega?"
-                else:
-                    greeting = f"Hello, namaste! Kya main {user_name} se baat kar raha hoon? Main {agent_name} bol raha hoon, {company_name} se. Main aapko disturb toh nahi kar raha? 30 seconds ka time milega?"
+            if custom_greeting_template:
+                greeting = custom_greeting_template.replace("{user_name}", user_name)\
+                                                    .replace("{agent_name}", agent_name)\
+                                                    .replace("{company_name}", company_name)
             else:
-                greeting = f"Hello! Am I speaking with {user_name}? I am {agent_name} from {company_name}. Hope I am not disturbing you. Do you have 30 seconds?"
+                if selected_language == "auto" or selected_language == "hindi":
+                    if is_female:
+                        greeting = f"Hello, namaste! Kya main {user_name} se baat kar rahi hoon? Main {agent_name} bol rahi hoon, {company_name} se. Main aapko disturb toh nahi kar rahi? 30 seconds ka time milega?"
+                    else:
+                        greeting = f"Hello, namaste! Kya main {user_name} se baat kar raha hoon? Main {agent_name} bol raha hoon, {company_name} se. Main aapko disturb toh nahi kar raha? 30 seconds ka time milega?"
+                else:
+                    greeting = f"Hello! Am I speaking with {user_name}? I am {agent_name} from {company_name}. Hope I am not disturbing you. Do you have 30 seconds?"
                 
             print(f"[TELEPHONY] Sending initial greeting: {greeting}")
             tts_task = asyncio.create_task(render_tts_and_send_to_twilio(greeting, voice_id, twilio_ws, stream_sid, tts_provider, pace=voice_speed))
