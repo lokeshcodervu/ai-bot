@@ -172,18 +172,17 @@ export default function CampaignsPage() {
   return (
     <div className="space-y-6 text-slate-800">
       
-      {/* CAMPAIGNS HEADER MATCHING FIGMA */}
-      <div className="flex justify-between items-start">
-        <div>
-          <h1 className="text-3xl font-extrabold font-outfit text-slate-900 tracking-tight">All Campaigns</h1>
-          <p className="text-sm text-slate-500 mt-1 font-medium">Manage your outbound calling campaigns</p>
-        </div>
+      {/* CAMPAIGNS HEADER */}
+      <div className="page-header-card justify-between">
+        <h1 className="page-header-title">
+          All Campaigns
+        </h1>
         
         <button
           onClick={() => setShowCreateModal(true)}
-          className="flex items-center text-sm font-bold px-4 py-2.5 bg-white border border-slate-200 hover:border-slate-300 text-slate-800 rounded-lg shadow-xs transition-all duration-150 cursor-pointer"
+          className="flex items-center text-xs font-bold px-4 py-2.5 bg-black hover:bg-[#1f2937] text-white rounded-lg transition-colors shadow-xs cursor-pointer font-outfit"
         >
-          <Plus className="h-4.5 w-4.5 mr-1.5 text-slate-600" />
+          <Plus className="h-4 w-4 mr-1.5" />
           New Campaign
         </button>
       </div>

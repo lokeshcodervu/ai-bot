@@ -38,8 +38,11 @@ def get_user_by_username(
     db: Session,
     username: str
 ):
+    if not username:
+        return None
+    clean = username.strip().lower()
     return db.query(User).filter(
-        User.username == username,
+        (func.lower(User.username) == clean) | (User.username == username.strip()),
         User.is_deleted == False
     ).first()
 
@@ -51,8 +54,11 @@ def get_user_by_email(
     db: Session,
     email: str
 ):
+    if not email:
+        return None
+    clean = email.strip().lower()
     return db.query(User).filter(
-        User.email == email,
+        (func.lower(User.email) == clean) | (User.email == email.strip()),
         User.is_deleted == False
     ).first()
 

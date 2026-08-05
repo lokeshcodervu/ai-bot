@@ -1758,9 +1758,11 @@ async def save_telephony_call_log(
             kw in user_text_combined
             for kw in [
                 "not interested", "no interest", "intrested nahi", "interest nahi", "intrest nahi",
+                "not intrested", "not intrest", "no intrest", "intrested nhi", "interest nhi", "intrest nhi",
                 "call mat karna", "call mat karo", "call mat kiye", "ab call mat", "ab call nahi",
-                "ab call mat karo", "nahi chahiye", "rehne do", "no thanks", "no thank you", "wrong number",
-                "don't call", "dont call"
+                "ab call mat karo", "nahi chahiye", "nhi chahiye", "rehne do", "no thanks", "no thank you", "wrong number",
+                "don't call", "dont call", "don't want", "dont want", "not required", "nahi lena", "nhi lena",
+                "mat karo", "chahiye nahi", "chahiye nhi"
             ]
         )
         
@@ -1770,7 +1772,7 @@ async def save_telephony_call_log(
                 "call back later", "call me later", "busy now", "busy right now", "talk later",
                 "baat me call", "baad me call", "baad mei call", "busy hoon", "meeting me",
                 "meeting mein", "kal call", "parso call", "doosre time", "dusre time", "phir kabhi",
-                "bad me", "baat me", "driving"
+                "bad me", "baat me", "driving", "baad me karna"
             ]
         )
 
@@ -1825,12 +1827,14 @@ async def save_telephony_call_log(
             except Exception as e:
                 print(f"[TELEPHONY ERROR] Failed to fetch Twilio recording: {str(e)}")
 
+        stored_disposition = str(final_status) if final_status in [LeadStatus.NOT_INTERESTED, LeadStatus.CONVERTED, LeadStatus.NEEDS_FOLLOW_UP] else "Answered"
+
         db_log = CallLog(
             tenant_id=tenant_id,
             lead_id=lead_id,
             campaign_id=None if campaign_id == "single-call" else campaign_id,
             call_duration=len(conversation_history) * 6, # approximate duration
-            call_disposition="Answered",
+            call_disposition=stored_disposition,
             recording_url=recording_url,
             ai_summary=summary,
             intent_tag=intent_tag,
@@ -1841,7 +1845,7 @@ async def save_telephony_call_log(
         lead = db.query(Lead).filter(Lead.id == lead_id).first()
         if lead:
             lead.status = final_status
-            lead.call_disposition = "Answered"
+            lead.call_disposition = stored_disposition
             
         db.add(db_log)
         db.commit()

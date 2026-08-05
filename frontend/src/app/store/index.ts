@@ -69,10 +69,41 @@ interface AppState {
   setActiveCampaignId: (id: string | null) => void;
 }
 
+const getInitialStorage = () => {
+  if (typeof window !== 'undefined') {
+    try {
+      const storedToken = localStorage.getItem('token');
+      const storedUser = localStorage.getItem('user');
+      const storedTenant = localStorage.getItem('tenant');
+
+      let parsedUser = null;
+      let parsedTenant = null;
+
+      if (storedUser && storedUser !== 'undefined' && storedUser !== 'null') {
+        parsedUser = JSON.parse(storedUser);
+      }
+      if (storedTenant && storedTenant !== 'undefined' && storedTenant !== 'null') {
+        parsedTenant = JSON.parse(storedTenant);
+      }
+
+      return {
+        token: (storedToken && storedToken !== 'undefined' && storedToken !== 'null') ? storedToken : null,
+        user: parsedUser,
+        tenant: parsedTenant,
+      };
+    } catch (e) {
+      console.error('Failed to parse initial state from localStorage:', e);
+    }
+  }
+  return { token: null, user: null, tenant: null };
+};
+
+const initialStorage = getInitialStorage();
+
 export const useStore = create<AppState>((set) => ({
-  token: null,
-  user: null,
-  tenant: null,
+  token: initialStorage.token,
+  user: initialStorage.user,
+  tenant: initialStorage.tenant,
   leads: [],
   campaigns: [
     { id: 'c1', name: 'Q3 Health Renewal', status: 'RUNNING', description: 'Policy renewal outreach', leadsCount: 240, completedCalls: 148, concurrencyLimit: 2, callsCount: 482, convertedCount: 38 },

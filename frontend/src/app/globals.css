@@ -33,28 +33,187 @@ h4 {
 
 /* Panel card titles specified by user design */
 .panel-title {
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Outfit';
   font-weight: 400;
   font-size: 20px;
   line-height: 30px;
   letter-spacing: 0;
+  color: #0a0a0a;
 }
 
-/* Custom crisp scrollbars */
+.font-sora {
+  font-family: 'Sora';
+}
+
+.font-outfit {
+  font-family: 'Outfit';
+}
+
+@media (min-width: 1024px) {
+  .lg\:p-8 {
+    padding: 1rem !important;
+  }
+}
+
+/* Reusable Component Classes */
+
+/* 1. Header Box Card */
+.page-header-card {
+  width: 100%;
+  min-height: 78px;
+  padding: 20px;
+  gap: 32px;
+  background-color: #ffffff;
+  border: 1px solid #d4d4d4;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+}
+
+/* 2. Page Title Text */
+.page-header-title {
+  font-family: 'Outfit';
+  font-weight: 400;
+  font-size: 30px;
+  line-height: 38px;
+  letter-spacing: 0%;
+  color: #0a0a0a;
+  margin: 0;
+}
+
+/* 3. Table Container Box */
+.table-card-box,
+.table-container {
+  width: 100%;
+  background-color: #ffffff;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* 4. Table Header Row & Cells (Frame 38 Specs) */
+.table-header-row {
+  height: 64px;
+  border-bottom: 1px solid #d4d4d4;
+  background-color: #ffffff;
+}
+
+.table-th {
+  font-family: 'Outfit' !important;
+  font-weight: 400 !important;
+  font-size: 16px !important;
+  line-height: 24px !important;
+  letter-spacing: 0% !important;
+  color: #71717a;
+  padding: 0 20px !important;
+  height: 64px !important;
+  vertical-align: middle;
+}
+
+/* 5. Table Body Row & Row Cells (Frame 44 & Text Specs) */
+.table-row {
+  height: 64px;
+  border-bottom: 1px solid #e5e5e5;
+  transition: background-color 0.15s ease;
+}
+
+.table-row:hover {
+  background-color: #f8fafc;
+}
+
+.table-cell-text,
+.table-td {
+  font-family: 'Outfit' !important;
+  font-weight: 400 !important;
+  font-size: 16px !important;
+  line-height: 24px !important;
+  letter-spacing: 0% !important;
+  color: #09090b;
+  height: 64px !important;
+  padding: 0 20px !important;
+  vertical-align: middle;
+}
+
+.table-td span,
+.table-td p,
+.table-td div,
+.table-td a,
+.table-td button {
+  font-family: 'Outfit' !important;
+  font-weight: 400 !important;
+}
+
+/* 6. Disposition Badges (Frame 281 Specs) */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-family: 'Outfit' !important;
+  font-weight: 400 !important;
+  font-size: 14px;
+  line-height: 20px;
+  letter-spacing: 0%;
+  border-width: 0.5px;
+  border-style: solid;
+}
+
+.status-badge-converted {
+  background-color: #ecfdf5;
+  border-color: #86efac;
+  color: #059669;
+}
+
+.status-badge-not-interested {
+  background-color: rgba(230, 57, 70, 0.08);
+  border-color: #e63946;
+  color: #e63946;
+}
+
+.status-badge-needs-followup {
+  background-color: #fffbeb;
+  border-color: #fde68a;
+  color: #d97706;
+}
+
+.status-badge-connected {
+  background-color: #eff6ff;
+  border-color: #bfdbfe;
+  color: #2563eb;
+}
+
+.status-badge-busy {
+  background-color: #f8fafc;
+  border-color: #e2e8f0;
+  color: #64748b;
+}
+
+/* Utility to hide scrollbars cleanly */
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+
+/* Hide scrollbars globally across all elements */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 
-::-webkit-scrollbar-track {
-  background: #f8f9fa;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+html,
+body,
+main,
+div,
+section {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
 }

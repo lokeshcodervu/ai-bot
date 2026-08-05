@@ -92,7 +92,7 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
           'ngrok-skip-browser-warning': 'true',
         },
         body: new URLSearchParams({
-          username: email,
+          username: email.trim().toLowerCase(),
           password: password,
         }),
       });

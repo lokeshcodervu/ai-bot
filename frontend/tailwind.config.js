@@ -11,6 +11,8 @@ module.exports = {
       fontFamily: {
         sans: ["var(--font-sans)", "Plus Jakarta Sans", "sans-serif"],
         display: ["Oswald", "Outfit", "sans-serif"],
+        sora: ["'Sora'", "sans-serif"],
+        outfit: ["'Outfit'", "sans-serif"],
       },
       colors: {
         brand: {

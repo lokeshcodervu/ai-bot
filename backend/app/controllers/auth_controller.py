@@ -13,11 +13,14 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/auth/login")
 
 def authenticate_user(db: Session, username_or_email: str, password: str):
     """Verify credentials. Checks both username and email columns."""
+    if not username_or_email:
+        return None
+    clean_identifier = username_or_email.strip()
     # First search by username
-    user = user_controller.get_user_by_username(db, username_or_email)
+    user = user_controller.get_user_by_username(db, clean_identifier)
     if not user:
         # fallback search by email
-        user = user_controller.get_user_by_email(db, username_or_email)
+        user = user_controller.get_user_by_email(db, clean_identifier)
     
     if not user:
         return None

@@ -14,7 +14,14 @@ import {
   Search,
   Phone,
   Kanban,
-  List
+  List,
+  ArrowLeft,
+  Mail,
+  ChevronDown,
+  ChevronUp,
+  BellOff,
+  Tag,
+  ShieldOff
 } from 'lucide-react';
 
 import API_BASE from '../../../config/api';
@@ -35,6 +42,7 @@ export default function LeadsCrmPage() {
   const [showImportModal, setShowImportModal] = useState(false);
   const [showAddLeadModal, setShowAddLeadModal] = useState(false);
   const [selectedLead, setSelectedLead] = useState<LeadWithSource | null>(null);
+  const [isStageOpen, setIsStageOpen] = useState(false);
 
   // Search states
   const [searchQuery, setSearchQuery] = useState('');
@@ -52,6 +60,57 @@ export default function LeadsCrmPage() {
   const [columns, setColumns] = useState<string[]>([]);
   const [mapping, setMapping] = useState({ name: '', phone: '', email: '', notes: '', source: '' });
   const [isProcessingCsv, setIsProcessingCsv] = useState(false);
+
+  // Lead Detail View states
+  const [showAddNote, setShowAddNote] = useState(false);
+  const [noteText, setNoteText] = useState('');
+  const [leadActivityLogs, setLeadActivityLogs] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (selectedLead) {
+      setNoteText(selectedLead.notes || '');
+      const fetchLeadActivity = async () => {
+        if (!token) return;
+        try {
+          const res = await fetch(`${API_BASE}/call-logs`, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'ngrok-skip-browser-warning': 'true'
+            }
+          });
+          if (res.ok) {
+            const logsData = await res.json();
+            const filtered = logsData.filter((log: any) => log.lead_id === selectedLead.id);
+            setLeadActivityLogs(filtered);
+          }
+        } catch (err) {
+          console.error("Error fetching lead activity logs:", err);
+        }
+      };
+      fetchLeadActivity();
+    } else {
+      setShowAddNote(false);
+    }
+  }, [selectedLead, token]);
+
+  const handleSaveNote = (leadId: string, note: string) => {
+    setLeadsList(prev => prev.map(lead =>
+      lead.id === leadId ? { ...lead, notes: note } : lead
+    ));
+    if (selectedLead && selectedLead.id === leadId) {
+      setSelectedLead(prev => prev ? { ...prev, notes: note } : null);
+    }
+    alert('Note saved successfully!');
+  };
+
+  const getInitials = (name: string) => {
+    if (!name) return 'L';
+    const parts = name.trim().split(' ');
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return name.slice(0, 2).toUpperCase();
+  };
 
   // Helper to fetch leads from API
   const fetchLeads = async () => {
@@ -409,13 +468,13 @@ export default function LeadsCrmPage() {
     if (name.includes('(DND)')) {
       const parts = name.split('(DND)');
       return (
-        <span className="font-semibold text-slate-900 flex items-center">
+        <span className="font-outfit font-normal text-[#0A0A0A] flex items-center">
           {parts[0].trim()}
           <span className="text-red-500 font-semibold text-xs ml-1.5">(DND)</span>
         </span>
       );
     }
-    return <span className="font-semibold text-slate-900">{name}</span>;
+    return <span className="font-outfit font-normal text-[#0A0A0A]">{name}</span>;
   };
 
   const kanbanColumns = [
@@ -456,20 +515,250 @@ export default function LeadsCrmPage() {
     }
   ];
 
-  return (
-    <div className="space-y-6 text-slate-800">
-
-      {/* HEADER SECTION */}
-      <div className="flex justify-between items-start">
-        <div>
-          <h1 className="text-3xl font-extrabold font-outfit text-slate-900 tracking-tight">Leads</h1>
-          <p className="text-sm text-slate-500 mt-1 font-medium">Manage and monitor all your prospect leads</p>
+  if (selectedLead) {
+    return (
+      <div className="p-6 space-y-6 text-slate-800 animate-fade-in w-full pb-12">
+        {/* TOP BACK BAR */}
+        <div className="flex items-center justify-between">
+          <button
+            onClick={() => setSelectedLead(null)}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-slate-200/80 hover:bg-slate-50 text-slate-600 text-xs font-bold rounded-xl shadow-2xs transition-all cursor-pointer"
+          >
+            <ArrowLeft className="w-4 h-4 text-slate-500" />
+            Back to list
+          </button>
         </div>
 
-        <div className="flex space-x-3">
+        {/* 2-COLUMN MAIN CONTENT GRID */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+
+          {/* LEFT COLUMN (5 COLS) */}
+          <div className="lg:col-span-5 space-y-4">
+
+            {/* LEAD PROFILE CARD */}
+            <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-2xs space-y-5">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-slate-200 text-slate-700 font-bold text-sm flex items-center justify-center border border-slate-300/40 shrink-0">
+                  {getInitials(selectedLead.name)}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h2 className="font-outfit font-normal text-[20px] leading-[30px] tracking-normal text-[#0A0A0A] truncate">{selectedLead.name}</h2>
+                  <p className="font-outfit text-xs font-normal text-[#6D8A96] mt-0.5">
+                    L-1001 - {selectedLead.source || 'Website'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Contact Info */}
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-slate-100 pt-4">
+                <div className="flex items-center gap-2">
+                  <Phone className="w-4 h-4 text-[#6D8A96]" />
+                  <span className="font-outfit font-normal text-[16px] leading-[24px] tracking-normal text-[#6D8A96]">{selectedLead.phone}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Mail className="w-4 h-4 text-[#6D8A96]" />
+                  <span className="font-outfit font-normal text-[16px] leading-[24px] tracking-normal text-[#6D8A96] truncate">{selectedLead.email || 'aarav.s@gmail.com'}</span>
+                </div>
+              </div>
+
+              {/* Badges */}
+              <div className="flex flex-wrap gap-2 pt-1">
+                <span className="px-3 py-1 bg-white border border-[#D1D5DB] rounded-lg text-xs font-outfit font-normal text-[#6D8A96] flex items-center gap-1.5 shadow-2xs">
+                  <Tag className="w-3.5 h-3.5 text-[#6D8A96]" /> hot
+                </span>
+                <span className="px-3 py-1 bg-white border border-[#D1D5DB] rounded-lg text-xs font-outfit font-normal text-[#6D8A96] flex items-center gap-1.5 shadow-2xs">
+                  <Tag className="w-3.5 h-3.5 text-[#6D8A96]" /> react
+                </span>
+              </div>
+
+              {/* Actions */}
+              <div className="space-y-2.5 pt-2">
+                <div className="grid grid-cols-2 gap-2.5">
+                  <button
+                    onClick={() => handleCallLead(selectedLead.id)}
+                    disabled={isCalling}
+                    className="w-full py-2.5 bg-[#1A1A1A] hover:bg-black text-white font-outfit font-medium text-sm rounded-xl transition-all shadow-xs flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+                  >
+                    {isCalling ? 'Calling...' : 'Call now'}
+                  </button>
+
+                  <button
+                    onClick={() => setShowAddNote(!showAddNote)}
+                    className={`w-full py-2.5 border font-outfit font-medium text-sm rounded-xl transition-all shadow-2xs cursor-pointer ${showAddNote
+                      ? 'bg-slate-100 border-[#6D8A96] text-[#6D8A96]'
+                      : 'bg-white border-[#6D8A96] hover:bg-slate-50 text-[#6D8A96]'
+                      }`}
+                  >
+                    Add note
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => handleUpdateLeadStatus(selectedLead.id, 'Not Interested')}
+                  className="w-full py-2.5 bg-white border border-[#6D8A96] hover:bg-slate-50 text-[#6D8A96] font-outfit font-medium text-sm rounded-xl transition-all shadow-2xs flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <ShieldOff className="w-4 h-4 text-[#6D8A96]" />
+                  Mark as DND
+                </button>
+              </div>
+            </div>
+
+            {/* STAGE SELECTION CARD */}
+            <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-2xs space-y-3">
+              <label className="block font-outfit text-xs font-bold text-slate-900">Stage</label>
+              <div className="relative">
+                {/* Trigger Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsStageOpen(!isStageOpen)}
+                  className="w-full flex items-center justify-between px-[14px] py-[7px] bg-white border border-slate-200 hover:border-slate-300 rounded-[8px] font-outfit font-normal text-[16px] leading-[24px] tracking-normal text-[#0A0A0A] shadow-2xs transition-all cursor-pointer h-[38px]"
+                >
+                  <span>
+                    {selectedLead.status === 'Imported' ? 'New' :
+                      selectedLead.status === 'Pending Queue' ? 'Contacted' :
+                        selectedLead.status === 'Connected' ? 'Qualified' :
+                          selectedLead.status === 'Needs Follow-up' ? 'Demo Booked' :
+                            selectedLead.status === 'Converted' ? 'Converted' :
+                              selectedLead.status === 'Not Interested' ? 'Lost' : selectedLead.status}
+                  </span>
+                  {isStageOpen ? (
+                    <ChevronUp className="w-4 h-4 text-slate-900" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 text-slate-900" />
+                  )}
+                </button>
+
+                {/* Custom Dropdown List matching Figma screenshot */}
+                {isStageOpen && (
+                  <div className="mt-2 bg-white rounded-2xl border border-slate-200/80 p-3 shadow-lg space-y-1 z-30 relative animate-fade-in">
+                    {[
+                      { label: 'New', value: 'Imported' },
+                      { label: 'Contacted', value: 'Pending Queue' },
+                      { label: 'Qualified', value: 'Connected' },
+                      { label: 'Demo Booked', value: 'Needs Follow-up' },
+                      { label: 'Converted', value: 'Converted' },
+                      { label: 'Lost', value: 'Not Interested' }
+                    ].map((opt) => {
+                      const isSelected = selectedLead.status === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => {
+                            handleUpdateLeadStatus(selectedLead.id, opt.value as Lead['status']);
+                            setIsStageOpen(false);
+                          }}
+                          className={`w-full text-left px-3.5 py-2 rounded-xl font-outfit text-[16px] leading-[24px] tracking-normal transition-colors cursor-pointer ${isSelected
+                            ? 'bg-[#0A0A0A] text-white font-normal'
+                            : 'text-[#6D8A96] font-normal hover:bg-slate-50'
+                            }`}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* ADD NOTE CARD (Opens when Add Note is clicked) */}
+            {showAddNote && (
+              <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-2xs space-y-3 animate-fade-in">
+                <label className="block text-xs font-bold text-slate-900">Add note</label>
+                <textarea
+                  value={noteText}
+                  onChange={(e) => setNoteText(e.target.value)}
+                  placeholder="Follow-up context..."
+                  rows={4}
+                  className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-slate-400 text-xs font-medium text-slate-900 placeholder:text-slate-400 resize-none shadow-2xs transition-colors"
+                />
+                <div className="flex justify-end gap-2 pt-1">
+                  <button
+                    onClick={() => setShowAddNote(false)}
+                    className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => handleSaveNote(selectedLead.id, noteText)}
+                    className="px-4 py-1.5 bg-black hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition-colors shadow-2xs cursor-pointer"
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            )}
+
+          </div>
+
+          {/* RIGHT COLUMN: ACTIVITY TIMELINE (7 COLS) */}
+          <div className="lg:col-span-7">
+            <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-2xs min-h-[480px]">
+              <h3 className="font-outfit font-normal text-[20px] leading-[30px] tracking-normal text-slate-900 border-b border-slate-100 pb-4 mb-6">Activity timeline</h3>
+
+              <div className="space-y-6">
+                {leadActivityLogs.length > 0 ? (
+                  leadActivityLogs.map((log: any) => {
+                    const mins = Math.floor((log.call_duration || 0) / 60);
+                    const secs = (log.call_duration || 0) % 60;
+                    const durationStr = `${mins}:${secs.toString().padStart(2, '0')}`;
+                    const rawDisp = (log.call_disposition || '').replace('LeadStatus.', '');
+                    let cleanDisp = 'Answered';
+                    if (rawDisp.includes('CONVERTED')) cleanDisp = 'Converted';
+                    else if (rawDisp.includes('NEEDS_FOLLOW_UP') || rawDisp.includes('Needs Follow-up')) cleanDisp = 'Converted';
+                    else if (rawDisp.includes('NOT_INTERESTED') || rawDisp.includes('Not Interested')) cleanDisp = 'Not Interested';
+                    else if (rawDisp) cleanDisp = rawDisp.replace('_', ' ');
+
+                    return (
+                      <div key={log.id} className="space-y-1.5 border-b border-slate-50 pb-5 last:border-0">
+                        <div className="flex items-center justify-between">
+                          <span className="font-outfit font-medium text-[16px] leading-[24px] tracking-normal text-slate-900">
+                            {cleanDisp === 'Not Interested' ? 'Not Interested' : `${cleanDisp} call`} - {durationStr}
+                          </span>
+                          <span className="text-[11px] font-medium text-slate-400">
+                            2 min ago
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 leading-relaxed font-medium">
+                          {log.ai_summary || "Lead confirmed interest in the React bootcamp. Booked demo for Aug 12, 4 PM IST. Wants EMI option."}
+                        </p>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="space-y-1.5 border-b border-slate-50 pb-5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-outfit font-medium text-[16px] leading-[24px] tracking-normal text-slate-900">Converted call - 3:42</span>
+                      <span className="text-[11px] font-medium text-slate-400">2 min ago</span>
+                    </div>
+                    <p className="text-xs text-slate-500 leading-relaxed font-medium">
+                      {selectedLead.notes || "Lead confirmed interest in the React bootcamp. Booked demo for Aug 12, 4 PM IST. Wants EMI option."}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6 text-slate-800 animate-fade-in font-outfit">
+
+      {/* HEADER SECTION */}
+      <div className="page-header-card justify-between">
+        <h1 className="page-header-title">
+          Leads
+        </h1>
+
+        <div className="flex items-center space-x-3">
           <button
             onClick={() => setShowAddLeadModal(true)}
-            className="flex items-center text-xs font-bold px-4 py-2.5 bg-black hover:bg-[#1f2937] text-white rounded-lg transition-colors shadow-sm"
+            className="flex items-center text-xs font-bold px-4 py-2.5 bg-black hover:bg-[#1f2937] text-white rounded-lg transition-colors shadow-xs cursor-pointer"
           >
             <Plus className="h-4 w-4 mr-1.5" /> Add Lead
           </button>
@@ -497,7 +786,7 @@ export default function LeadsCrmPage() {
                 alert("Error downloading template.");
               }
             }}
-            className="flex items-center text-xs font-bold px-4 py-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg transition-colors shadow-xs"
+            className="flex items-center text-xs font-bold px-4 py-2.5 bg-white border border-[#E4E4E7] hover:bg-slate-50 text-slate-700 rounded-lg transition-colors shadow-2xs cursor-pointer"
           >
             <FileText className="h-4 w-4 mr-1.5 text-slate-500" /> Template
           </button>
@@ -505,7 +794,7 @@ export default function LeadsCrmPage() {
       </div>
 
       {/* TABLE WHITE CARD CONTAINER */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+      <div className="table-card-box">
 
         {/* Controls Row */}
         <div className="p-6 flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4">
@@ -531,8 +820,8 @@ export default function LeadsCrmPage() {
                 type="button"
                 onClick={() => setViewMode('list')}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all ${viewMode === 'list'
-                    ? 'bg-white text-black shadow-xs'
-                    : 'text-slate-500 hover:text-slate-900'
+                  ? 'bg-white text-black shadow-xs'
+                  : 'text-slate-500 hover:text-slate-900'
                   }`}
                 title="List View"
               >
@@ -543,8 +832,8 @@ export default function LeadsCrmPage() {
                 type="button"
                 onClick={() => setViewMode('kanban')}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all ${viewMode === 'kanban'
-                    ? 'bg-white text-black shadow-xs'
-                    : 'text-slate-500 hover:text-slate-900'
+                  ? 'bg-white text-black shadow-xs'
+                  : 'text-slate-500 hover:text-slate-900'
                   }`}
                 title="Kanban Board"
               >
@@ -651,8 +940,8 @@ export default function LeadsCrmPage() {
                                 onClick={() => handleCallLead(lead.id)}
                                 disabled={isCalling}
                                 className={`p-1.5 rounded-lg border transition-all flex items-center justify-center flex-shrink-0 ${isDialing
-                                    ? 'bg-red-50 border-red-200 text-red-500 animate-pulse'
-                                    : 'bg-black text-white hover:bg-[#1f2937] border-transparent disabled:opacity-50 disabled:bg-slate-100 disabled:text-slate-400'
+                                  ? 'bg-red-50 border-red-200 text-red-500 animate-pulse'
+                                  : 'bg-black text-white hover:bg-[#1f2937] border-transparent disabled:opacity-50 disabled:bg-slate-100 disabled:text-slate-400'
                                   }`}
                                 title={isDialing ? 'Calling...' : 'Trigger AI Call'}
                               >
@@ -676,32 +965,32 @@ export default function LeadsCrmPage() {
           </div>
         ) : (
           /* Table View */
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
+          <div className="overflow-x-auto no-scrollbar">
+            <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="border-y border-slate-100 bg-slate-50/30 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                  <th className="px-6 py-4 font-semibold">Name</th>
-                  <th className="px-6 py-4 font-semibold">Phone</th>
-                  <th className="px-6 py-4 font-semibold">Email</th>
-                  <th className="px-6 py-4 font-semibold">Source</th>
-                  <th className="px-6 py-4 font-semibold">Stage</th>
-                  <th className="px-6 py-4 font-semibold">Action</th>
+                <tr className="table-header-row">
+                  <th className="table-th">Name</th>
+                  <th className="table-th">Phone</th>
+                  <th className="table-th">Email</th>
+                  <th className="table-th">Source</th>
+                  <th className="table-th">Stage</th>
+                  <th className="table-th">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+              <tbody className="divide-y divide-[#E5E5E5]">
                 {displayedLeads.map((lead) => {
                   const stage = getStageDisplay(lead);
                   return (
-                    <tr key={lead.id} className="hover:bg-slate-50/40 transition-colors">
-                      <td className="px-6 py-4 font-bold">{renderLeadName(lead.name)}</td>
-                      <td className="px-6 py-4 text-slate-600 font-semibold">{lead.phone}</td>
-                      <td className="px-6 py-4 text-slate-500">{lead.email || '-'}</td>
-                      <td className="px-6 py-4 text-slate-500">{lead.source}</td>
-                      <td className={`px-6 py-4 font-semibold ${stage.color}`}>{stage.label}</td>
-                      <td className="px-6 py-4">
+                    <tr key={lead.id} className="table-row">
+                      <td className="table-td">{renderLeadName(lead.name)}</td>
+                      <td className="table-td">{lead.phone}</td>
+                      <td className="table-td">{lead.email || '-'}</td>
+                      <td className="table-td">{lead.source}</td>
+                      <td className={`table-td ${stage.color}`}>{stage.label}</td>
+                      <td className="table-td">
                         <button
                           onClick={() => setSelectedLead(lead)}
-                          className="text-slate-400 hover:text-slate-700 font-semibold transition-colors focus:outline-none"
+                          className="table-td p-0 border-0 hover:text-indigo-600 cursor-pointer font-normal transition-colors focus:outline-none"
                         >
                           Open
                         </button>
@@ -723,88 +1012,7 @@ export default function LeadsCrmPage() {
         )}
       </div>
 
-      {/* LEAD DETAILED DETAILS DIALOG MODAL */}
-      {selectedLead && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white max-w-md w-full rounded-2xl shadow-lg border border-slate-200 overflow-hidden text-xs">
-            <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
-              <div className="flex items-center space-x-2">
-                <User className="h-4.5 w-4.5 text-black" />
-                <span className="font-bold text-slate-900 text-sm">Lead Details Card</span>
-              </div>
-              <button onClick={() => setSelectedLead(null)} className="text-slate-400 hover:text-slate-600">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
 
-            <div className="p-6 space-y-4">
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Prospect Name</p>
-                <p className="font-bold text-slate-800 text-base mt-0.5">{selectedLead.name}</p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Phone Number</p>
-                  <p className="font-semibold text-slate-700 mt-1">{selectedLead.phone}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Email Address</p>
-                  <p className="font-semibold text-slate-700 mt-1 truncate">{selectedLead.email || 'N/A'}</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Source</p>
-                  <p className="font-semibold text-slate-700 mt-1">{selectedLead.source}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Call Status Stage</p>
-                  <select
-                    value={selectedLead.status}
-                    onChange={(e) => {
-                      const newStatus = e.target.value as Lead['status'];
-                      handleUpdateLeadStatus(selectedLead.id, newStatus);
-                    }}
-                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 font-bold focus:outline-none focus:ring-2 focus:ring-black text-slate-800 text-xs bg-white cursor-pointer"
-                  >
-                    <option value="Imported">New (Imported)</option>
-                    <option value="Pending Queue">Contacted (Pending Queue)</option>
-                    <option value="Connected">Contacted (Connected)</option>
-                    <option value="Converted">Converted</option>
-                    <option value="Needs Follow-up">Qualified / Demo Booked</option>
-                    <option value="Not Interested">Lost (Not Interested)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">CRM Notes & Context</p>
-                <p className="bg-slate-50 p-3 rounded-lg border border-slate-200/60 text-slate-600 mt-1 font-medium leading-relaxed">
-                  {selectedLead.notes || 'No description notes.'}
-                </p>
-              </div>
-            </div>
-
-            <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-between items-center">
-              <button
-                onClick={() => handleCallLead(selectedLead.id)}
-                disabled={isCalling}
-                className="px-5 py-2 bg-black hover:bg-[#1f2937] disabled:bg-slate-200 text-white rounded-lg font-bold flex items-center transition-colors shadow-sm"
-              >
-                <Phone className="h-4 w-4 mr-2" /> {isCalling ? 'Calling...' : 'Trigger AI Call'}
-              </button>
-              <button
-                onClick={() => setSelectedLead(null)}
-                className="px-5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg font-bold transition-colors shadow-2xs"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* CSV IMPORT DIALOG MODAL */}
       {showImportModal && (

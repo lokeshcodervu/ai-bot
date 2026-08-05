@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useStore } from '../store';
 import API_BASE from '../../config/api';
@@ -14,13 +14,184 @@ import {
   X
 } from 'lucide-react';
 
+const getCampaignStatusStyle = (status: string) => {
+  const s = (status || '').toUpperCase();
+  if (s === 'RUNNING' || s === 'ACTIVE' || s === 'LIVE') {
+    return { statusLabel: 'Live', statusColor: 'bg-[#FFF1F2] text-[#F43F5E] border-[#FECDD3]', barColor: 'bg-[#F43F5E]' };
+  }
+  if (s === 'COMPLETED') {
+    return { statusLabel: 'Completed', statusColor: 'bg-[#ECFDF5] text-[#059669] border-[#A7F3D0]', barColor: 'bg-[#059669]' };
+  }
+  return { statusLabel: 'Paused', statusColor: 'bg-[#FFF7ED] text-[#EA580C] border-[#FFEDD5]', barColor: 'bg-[#E5E5E5]' };
+};
+
+const getDispositionStyle = (disposition: string) => {
+  const disp = (disposition || '').toLowerCase();
+  if (disp.includes('converted')) {
+    return 'bg-[#ECFDF5] text-[#059669] border-[#A7F3D0]';
+  }
+  if (disp.includes('not interested') || disp.includes('failed') || disp.includes('declined')) {
+    return 'bg-[#FFF1F2] text-[#F43F5E] border-[#FECDD3]';
+  }
+  if (disp.includes('follow-up') || disp.includes('followup') || disp.includes('needs follow-up')) {
+    return 'bg-[#FFF7ED] text-[#EA580C] border-[#FFEDD5]';
+  }
+  if (disp.includes('connected') || disp.includes('answered')) {
+    return 'bg-[#EFF6FF] text-[#2563EB] border-[#BFDBFE]';
+  }
+  return 'text-slate-400 font-medium';
+};
+
+const formatRelativeTime = (dateString?: string) => {
+  if (!dateString) return 'N/A';
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) return 'N/A';
+
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `${diffMins} min ago`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours} hr ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+};
+
+const formatDuration = (seconds?: number) => {
+  if (seconds === undefined || seconds === null) return '0:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+};
+
 export default function DashboardOverview() {
   const router = useRouter();
-  const { campaigns, wallet, setWallet, token } = useStore();
+  const { wallet, setWallet, token, setToken, setUser } = useStore();
 
   const [showFundsModal, setShowFundsModal] = useState(false);
   const [addAmount, setAddAmount] = useState('1000');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Dynamic Metrics State
+  const [totalCalls, setTotalCalls] = useState<number | null>(null);
+  const [connectionRate, setConnectionRate] = useState<number | null>(null);
+  const [leadsConverted, setLeadsConverted] = useState<number | null>(null);
+  const [costPerConversion, setCostPerConversion] = useState<number | null>(null);
+
+  // Dynamic Lists State
+  const [dynamicCampaigns, setDynamicCampaigns] = useState<any[] | null>(null);
+  const [dynamicRecentCalls, setDynamicRecentCalls] = useState<any[] | null>(null);
+
+  useEffect(() => {
+    const fetchDashboardData = async () => {
+      if (!token) {
+        setIsLoading(false);
+        return;
+      }
+      setIsLoading(true);
+
+      try {
+        const headers = {
+          'Authorization': `Bearer ${token}`,
+          'ngrok-skip-browser-warning': 'true'
+        };
+
+        const [walletRes, logsRes, leadsRes, campaignsRes] = await Promise.all([
+          fetch(`${API_BASE}/tenant/wallet`, { headers }).catch(() => null),
+          fetch(`${API_BASE}/call-logs`, { headers }).catch(() => null),
+          fetch(`${API_BASE}/leads`, { headers }).catch(() => null),
+          fetch(`${API_BASE}/campaigns`, { headers }).catch(() => null)
+        ]);
+
+        if (
+          (walletRes && walletRes.status === 401) ||
+          (logsRes && logsRes.status === 401) ||
+          (leadsRes && leadsRes.status === 401) ||
+          (campaignsRes && campaignsRes.status === 401)
+        ) {
+          setToken(null);
+          setUser(null);
+          router.push('/');
+          return;
+        }
+
+        // 1. Wallet Balance
+        if (walletRes && walletRes.ok) {
+          const walletData = await walletRes.json();
+          setWallet({ balance: walletData.balance / 100 });
+        }
+
+        const logsData = logsRes && logsRes.ok ? await logsRes.json() : [];
+        const leadsData = leadsRes && leadsRes.ok ? await leadsRes.json() : [];
+        const campaignsData = campaignsRes && campaignsRes.ok ? await campaignsRes.json() : [];
+
+        // 2. Calculated Metrics from backend APIs
+        if (logsData.length > 0 || leadsData.length > 0 || campaignsData.length > 0) {
+          const callCount = logsData.length;
+          setTotalCalls(callCount);
+
+          const answered = logsData.filter((log: any) =>
+            log.call_disposition === 'Answered' || log.call_disposition === 'Connected' || log.status === 'Completed'
+          ).length;
+          const rate = callCount > 0 ? Math.round((answered / callCount) * 100) : 0;
+          setConnectionRate(rate);
+
+          const convertedCount = leadsData.filter((l: any) => l.status === 'Converted' || l.call_disposition === 'Converted').length;
+          setLeadsConverted(convertedCount);
+
+          const costPerConv = convertedCount > 0 ? Math.round((callCount * 142) / (convertedCount || 1)) : 142;
+          setCostPerConversion(costPerConv);
+
+          // 3. Dynamic Active Campaigns
+          if (campaignsData.length > 0) {
+            const mappedCampaigns = campaignsData.slice(0, 5).map((camp: any) => {
+              const leads = camp.leadsCount || camp.total_leads || (camp.leads ? camp.leads.length : 0);
+              const completed = camp.completedCalls || camp.calls_count || 0;
+              const progress = leads > 0 ? Math.min(100, Math.round((completed / leads) * 100)) : 0;
+              const style = getCampaignStatusStyle(camp.status);
+              return {
+                name: camp.name,
+                leads: leads,
+                progress: progress,
+                status: style.statusLabel,
+                statusColor: style.statusColor,
+                barColor: style.barColor
+              };
+            });
+            setDynamicCampaigns(mappedCampaigns);
+          }
+
+          // 4. Dynamic Recent Calls
+          if (logsData.length > 0) {
+            const mappedCalls = logsData.slice(0, 5).map((log: any) => {
+              const lead = leadsData.find((l: any) => l.id === log.lead_id);
+              const campaign = campaignsData.find((c: any) => c.id === log.campaign_id);
+              const disp = log.call_disposition || log.status || 'Connected';
+              return {
+                lead: lead?.name || log.lead_name || 'Unknown Lead',
+                phone: lead?.phone || log.phone_number || 'N/A',
+                campaign: campaign?.name || log.campaign_name || 'General Outreach',
+                duration: formatDuration(log.call_duration),
+                disposition: disp,
+                dispStyle: getDispositionStyle(disp),
+                time: formatRelativeTime(log.created_at)
+              };
+            });
+            setDynamicRecentCalls(mappedCalls);
+          }
+        }
+      } catch (err) {
+        console.error('Error loading dynamic dashboard data:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchDashboardData();
+  }, [token, setToken, setUser, setWallet, router]);
 
   const handleAddFundsSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,11 +233,11 @@ export default function DashboardOverview() {
     }
   };
 
-  // 4 Top Metrics matching exact Figma image
+  // 4 Top KPI Metrics Cards
   const topMetrics = [
     { 
       name: 'Total Calls Made', 
-      value: '1,284', 
+      value: totalCalls !== null ? totalCalls.toLocaleString() : '1,284', 
       change: '+12.4% this week',
       isPositive: true,
       icon: Phone,
@@ -74,7 +245,7 @@ export default function DashboardOverview() {
     },
     { 
       name: 'Connection Rate', 
-      value: '38%', 
+      value: connectionRate !== null ? `${connectionRate}%` : '38%', 
       change: '+3.1% this week',
       isPositive: true,
       icon: TrendingUp,
@@ -82,7 +253,7 @@ export default function DashboardOverview() {
     },
     { 
       name: 'Leads Converted', 
-      value: '94', 
+      value: leadsConverted !== null ? leadsConverted.toLocaleString() : '94', 
       change: '-2.8% this week',
       isPositive: false,
       icon: CheckCircle2,
@@ -90,7 +261,7 @@ export default function DashboardOverview() {
     },
     { 
       name: 'Cost per Conversion', 
-      value: '142', 
+      value: costPerConversion !== null ? costPerConversion.toLocaleString() : '142', 
       change: '+5.8% this week',
       isPositive: true,
       icon: null,
@@ -98,15 +269,15 @@ export default function DashboardOverview() {
     }
   ];
 
-  // Active Campaigns list matching Figma design
-  const activeCampaignsList = [
+  // Active Campaigns list fallback
+  const activeCampaignsList = dynamicCampaigns || [
     { name: 'Q3 React Bootcamp', leads: 240, progress: 62, status: 'Live', statusColor: 'bg-[#FFF1F2] text-[#F43F5E] border-[#FECDD3]', barColor: 'bg-[#F43F5E]' },
     { name: 'Python Admission', leads: 180, progress: 100, status: 'Completed', statusColor: 'bg-[#ECFDF5] text-[#059669] border-[#A7F3D0]', barColor: 'bg-[#059669]' },
     { name: 'Data Science Outreach', leads: 90, progress: 0, status: 'Paused', statusColor: 'bg-[#FFF7ED] text-[#EA580C] border-[#FFEDD5]', barColor: 'bg-[#E5E5E5]' }
   ];
 
-  // Recent Call Records matching Figma design
-  const recentCallsList = [
+  // Recent Call Records fallback
+  const recentCallsList = dynamicRecentCalls || [
     { lead: 'Aarav Sharma', phone: '+91 9493949393', campaign: 'Q3 React Bootcamp', duration: '3:42', disposition: 'Converted', dispStyle: 'bg-[#ECFDF5] text-[#059669] border-[#A7F3D0]', time: '2 min ago' },
     { lead: 'Priya Iyer', phone: '+91 4857933838', campaign: 'Python Admission', duration: '1:18', disposition: 'Not Interested', dispStyle: 'bg-[#FFF1F2] text-[#F43F5E] border-[#FECDD3]', time: '8 min ago' },
     { lead: 'Aarav Sharma', phone: '+91 9493949393', campaign: 'Q3 React Bootcamp', duration: '3:42', disposition: 'Needs Follow-up', dispStyle: 'bg-[#FFF7ED] text-[#EA580C] border-[#FFEDD5]', time: '14 min ago' },
@@ -165,15 +336,18 @@ export default function DashboardOverview() {
 
             <div>
               <h3 className="text-3xl font-extrabold font-outfit text-slate-900">
-                ₹{(wallet?.balance !== undefined ? wallet.balance : 1284).toLocaleString()}
+                ₹{(wallet?.balance !== undefined ? wallet.balance : 10000).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </h3>
               <p className="text-xs text-slate-400 font-medium mt-1">of ₹10,000 monthly budget</p>
             </div>
 
-            {/* Red progress bar matching Figma */}
+            {/* Progress bar */}
             <div className="space-y-2">
               <div className="h-2 w-full bg-[#E5E5E5] rounded-full overflow-hidden">
-                <div className="h-full bg-[#ef4444] rounded-full" style={{ width: '25%' }} />
+                <div 
+                  className="h-full bg-[#ef4444] rounded-full transition-all" 
+                  style={{ width: `${Math.min(100, Math.max(5, ((wallet?.balance || 0) / 10000) * 100))}%` }} 
+                />
               </div>
               <p className="text-xs font-semibold text-[#ef4444]">Campaigns pause at ₹0</p>
             </div>
@@ -188,8 +362,7 @@ export default function DashboardOverview() {
           </button>
         </div>
 
-        {/* ACTIVE CAMPAIGNS CARD MATCHING FIGMA SPECIFICATIONS 100% */}
-        {/* width: 753; height: 324; gap: 16px; border-radius: 8px; bg: #FFFFFF; border: 1px solid #D4D4D4 */}
+        {/* ACTIVE CAMPAIGNS CARD */}
         <div className="bg-white rounded-[8px] border border-[#D4D4D4] lg:col-span-2 flex flex-col justify-between overflow-hidden">
           
           {/* Header Row */}
@@ -197,7 +370,7 @@ export default function DashboardOverview() {
             <h3 className="panel-title text-slate-900 font-bold">Active Campaigns</h3>
             <button
               onClick={() => router.push('/dashboard/campaigns')}
-              className="px-4 py-1.5 bg-white border border-[#D4D4D4] hover:bg-slate-50 text-slate-900 font-semibold text-xs rounded-[8px] flex items-center space-x-1.5 transition-all shadow-2xs"
+              className="px-4 py-1.5 bg-white border border-[#D4D4D4] hover:bg-slate-50 text-slate-900 font-semibold text-xs rounded-[8px] flex items-center space-x-1.5 transition-all shadow-2xs cursor-pointer"
             >
               <span>View All Campaigns</span>
               <ArrowUpRight className="h-3.5 w-3.5" />
@@ -216,8 +389,8 @@ export default function DashboardOverview() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#F0F0F0]">
-                {activeCampaignsList.map((camp) => (
-                  <tr key={camp.name} className="hover:bg-slate-50/50 transition-colors">
+                {activeCampaignsList.map((camp, idx) => (
+                  <tr key={camp.name + idx} className="hover:bg-slate-50/50 transition-colors">
                     <td className="py-4 font-bold text-slate-900">{camp.name}</td>
                     <td className="py-4 px-4 font-semibold text-slate-700">{camp.leads}</td>
                     <td className="py-4 px-4">
@@ -242,13 +415,13 @@ export default function DashboardOverview() {
 
       </div>
 
-      {/* RECENT CALLS CARD MATCHING FIGMA CONTAINER SPECIFICATIONS */}
+      {/* RECENT CALLS CARD */}
       <div className="bg-white rounded-[8px] border border-[#D4D4D4] overflow-hidden">
         <div className="p-5 flex items-center justify-between border-b border-[#E5E5E5]">
           <h3 className="panel-title text-slate-900 font-bold">Recent Calls</h3>
           <button
             onClick={() => router.push('/dashboard/call-logs')}
-            className="px-4 py-1.5 bg-white border border-[#D4D4D4] hover:bg-slate-50 text-slate-900 font-semibold text-xs rounded-[8px] flex items-center space-x-1.5 transition-all shadow-2xs"
+            className="px-4 py-1.5 bg-white border border-[#D4D4D4] hover:bg-slate-50 text-slate-900 font-semibold text-xs rounded-[8px] flex items-center space-x-1.5 transition-all shadow-2xs cursor-pointer"
           >
             <span>View All Calls</span>
             <ArrowUpRight className="h-3.5 w-3.5" />
@@ -302,7 +475,7 @@ export default function DashboardOverview() {
                 <Wallet className="h-4.5 w-4.5 text-[#111111]" />
                 <span className="font-bold text-slate-900 text-sm">Add Funds</span>
               </div>
-              <button onClick={() => setShowFundsModal(false)} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => setShowFundsModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -332,14 +505,14 @@ export default function DashboardOverview() {
                 <button
                   type="button"
                   onClick={() => setShowFundsModal(false)}
-                  className="px-4 py-2 bg-white hover:bg-slate-50 border border-[#D4D4D4] text-slate-700 rounded-lg text-xs font-bold transition-all"
+                  className="px-4 py-2 bg-white hover:bg-slate-50 border border-[#D4D4D4] text-slate-700 rounded-lg text-xs font-bold transition-all cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="px-4 py-2 bg-[#111111] hover:bg-black text-white rounded-lg text-xs font-bold transition-all shadow-sm"
+                  className="px-4 py-2 bg-[#111111] hover:bg-black text-white rounded-lg text-xs font-bold transition-all shadow-sm cursor-pointer"
                 >
                   {isSubmitting ? 'Processing...' : 'Confirm Recharge'}
                 </button>

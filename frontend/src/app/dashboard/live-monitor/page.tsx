@@ -322,13 +322,10 @@ export default function LiveMonitorPage() {
     <div className="space-y-6 text-slate-800">
 
       {/* HEADER SECTION */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-extrabold font-outfit text-slate-900 tracking-tight flex items-center gap-2">
-            Live Monitor
-          </h1>
-          <p className="text-sm text-slate-500 mt-1 font-medium">Listen and monitor active AI outbound calls in real-time</p>
-        </div>
+      <div className="page-header-card">
+        <h1 className="page-header-title">
+          Live Monitor
+        </h1>
       </div>
 
       {/* TWO COLUMN GRID LAYOUT */}

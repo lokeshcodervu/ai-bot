@@ -37,7 +37,7 @@ interface DashboardLayoutProps {
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const { user, tenant, wallet, setWallet, token, setToken, setUser } = useStore();
+  const { user, tenant, wallet, setWallet, token, setToken, setUser, initStoreFromStorage } = useStore();
 
   const [showRechargeModal, setShowRechargeModal] = useState(false);
   const [rechargeAmount, setRechargeAmount] = useState('10.00');
@@ -49,11 +49,20 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   // Coming soon modal state
   const [comingSoonFeature, setComingSoonFeature] = useState<string | null>(null);
 
+  const [mounted, setMounted] = useState(false);
+
   useEffect(() => {
-    if (!token) {
+    initStoreFromStorage();
+    setMounted(true);
+  }, [initStoreFromStorage]);
+
+  useEffect(() => {
+    if (!mounted) return;
+    const activeToken = token || (typeof window !== 'undefined' ? localStorage.getItem('token') : null);
+    if (!activeToken) {
       router.push('/');
     }
-  }, [token, router]);
+  }, [token, mounted, router]);
 
   useEffect(() => {
     async function loadWallet() {
@@ -133,10 +142,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     { name: 'Live Monitor', path: '/dashboard/live-monitor', icon: Radio },
     { name: 'Call Logs', path: '/dashboard/call-logs', icon: PhoneCall },
     { name: 'Analytics', path: '/dashboard/analytics', icon: LineChart },
-    { name: 'User Management', path: '#user-management', icon: UserCheck },
-    { name: 'Compilance', path: '#compliance', icon: ShieldCheck },
-    { name: 'Billing', path: '#billing', icon: CreditCard },
-    { name: 'Super Admin', path: '#super-admin', icon: Award },
+    { name: 'User Management', path: '/dashboard/user-management', icon: UserCheck },
+    { name: 'Compilance', path: '/dashboard/compliance', icon: ShieldCheck },
+    { name: 'Billing', path: '/dashboard/billing', icon: CreditCard },
+    { name: 'Super Admin', path: '/dashboard/super-admin', icon: Award },
     { name: 'Settings', path: '/dashboard/settings', icon: Settings },
   ];
 
@@ -222,8 +231,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       {/* MAIN CONTAINER */}
       <div className="flex-1 flex flex-col overflow-hidden">
 
-        {/* HEADER BAR */}
-        <header className="h-20 bg-white border-b border-slate-200 flex items-center justify-between px-6 lg:px-8">
+        {/* HEADER BAR (Height: 76px, Border-bottom: 1px solid #D4D4D4, Background: #FFFFFF, Padding: 16px) */}
+        <header className="h-[76px] bg-white border-b border-[#D4D4D4] flex items-center justify-between px-4 lg:px-6 py-4">
           <div className="flex items-center space-x-4">
             {/* Hamburger menu button for mobile */}
             <button
@@ -242,26 +251,26 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           </div>
 
           {/* Right Header Navigation Elements */}
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-4 font-outfit">
             {/* Notification Bell */}
-            <button className="relative p-2.5 text-slate-700 hover:text-black bg-white hover:bg-slate-50 border border-slate-200 rounded-full cursor-pointer transition-all duration-150">
-              <Bell className="h-5 w-5" />
+            <button className="relative p-2.5 text-slate-700 hover:text-black bg-white hover:bg-slate-50 border border-[#D4D4D4] rounded-full cursor-pointer transition-all duration-150">
+              <Bell className="h-5 w-5 text-slate-700" />
               <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-orange-500" />
             </button>
 
-            {/* Wallet Tracker matching design */}
+            {/* Wallet Tracker (Height: 44px, Padding: 10px 16px 10px 20px, Gap: 8px, Border: 1px solid #D4D4D4, Radius: 8px) */}
             <div
               onClick={() => setShowRechargeModal(true)}
-              className="flex items-center bg-white px-4 py-2 rounded-lg border border-slate-200 shadow-sm hover:border-slate-300 transition-all duration-150 cursor-pointer text-xs font-semibold text-slate-800"
+              className="h-[44px] flex items-center gap-2 bg-white pt-[10px] pr-[16px] pb-[10px] pl-[20px] rounded-lg border border-[#D4D4D4] hover:border-slate-400 transition-all duration-150 cursor-pointer text-center font-outfit font-medium text-[16px] leading-[24px] text-[#0A0A0A]"
             >
-              <span className="text-slate-800 mr-1.5 font-bold">Wallet Balance:</span>
-              <span className="text-black font-extrabold">₹{(wallet?.balance !== undefined ? wallet.balance : 120.00).toFixed(2)}</span>
+              <span className="text-[#0A0A0A] font-medium font-outfit">Wallet Balance:</span>
+              <span className="text-[#0A0A0A] font-bold font-outfit">₹{(wallet?.balance !== undefined ? wallet.balance : 120.00).toFixed(2)}</span>
             </div>
 
             {/* AI Setup button */}
             <button
               onClick={() => router.push('/dashboard/settings')}
-              className="bg-[#111111] hover:bg-black text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all duration-150 cursor-pointer shadow-sm hover:shadow"
+              className="h-[44px] bg-[#18181B] hover:bg-black text-white px-4 rounded-lg text-sm font-normal font-outfit flex items-center gap-2 transition-all duration-150 cursor-pointer shadow-xs"
             >
               Go to AI Setup
               <ArrowUpRight className="h-4 w-4" />
@@ -270,7 +279,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         </header>
 
         {/* VIEW SCROLLER */}
-        <main className="flex-1 overflow-y-auto bg-[#f8fafc] p-6 lg:p-8">
+        <main className="flex-1 overflow-y-auto no-scrollbar bg-[#f8fafc] p-4 lg:p-4">
           {children}
         </main>
       </div>
