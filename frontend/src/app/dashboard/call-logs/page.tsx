@@ -12,6 +12,7 @@ interface CallLogItem {
   campaign: string;
   duration: string;
   disposition: string;
+  date: string;
   time: string;
   recordingUrl?: string;
   aiSummary?: string;
@@ -83,28 +84,23 @@ export default function CallLogsPage() {
           const secs = (log.call_duration || 0) % 60;
           const durationStr = `${mins}:${secs.toString().padStart(2, '0')}`;
 
-          // Format date and time
-          const date = new Date(log.created_at);
-          const now = new Date();
-          const diffMs = now.getTime() - date.getTime();
-          const diffMins = Math.floor(diffMs / 60000);
-          let timeStr = '';
-          if (isNaN(date.getTime())) {
-            timeStr = 'N/A';
-          } else if (diffMins < 1) {
-            timeStr = 'Just now';
-          } else if (diffMins < 60) {
-            timeStr = `${diffMins} min ago`;
-          } else {
-            const diffHours = Math.floor(diffMins / 60);
-            if (diffHours < 24) {
-              timeStr = `${diffHours} hours ago`;
-            } else {
-              const day = date.getDate().toString().padStart(2, '0');
-              const month = (date.getMonth() + 1).toString().padStart(2, '0');
-              const year = date.getFullYear();
-              timeStr = `${day}/${month}/${year}`;
-            }
+          // Format date and time separately
+          const dateObj = new Date(log.created_at);
+          let dateStr = 'N/A';
+          let timeStr = 'N/A';
+
+          if (!isNaN(dateObj.getTime())) {
+            const day = dateObj.getDate().toString().padStart(2, '0');
+            const month = (dateObj.getMonth() + 1).toString().padStart(2, '0');
+            const year = dateObj.getFullYear();
+            dateStr = `${day}/${month}/${year}`;
+
+            let hours = dateObj.getHours();
+            const minutes = dateObj.getMinutes().toString().padStart(2, '0');
+            const ampm = hours >= 12 ? 'PM' : 'AM';
+            hours = hours % 12;
+            hours = hours ? hours : 12;
+            timeStr = `${hours.toString().padStart(2, '0')}:${minutes} ${ampm}`;
           }
 
           // Map dispositions based on lead status, intent tag, or stored call disposition
@@ -128,6 +124,7 @@ export default function CallLogsPage() {
             campaign: campaign ? campaign.name : 'Direct Call',
             duration: durationStr,
             disposition: disposition,
+            date: dateStr,
             time: timeStr,
             recordingUrl: log.recording_url || `https://s3.amazonaws.com/ai-bot-recordings/call_${log.lead_id}.mp3`,
             aiSummary: log.ai_summary || "Lead confirmed interest in the React bootcamp. Booked demo for Aug 12, 4 PM IST. Wants EMI option.",
@@ -219,7 +216,7 @@ export default function CallLogsPage() {
                     {selectedLog.leadName} Recording
                   </h2>
                   <p className="font-outfit text-xs font-normal text-slate-400 mt-1">
-                    {selectedLog.time} · {selectedLog.duration}
+                    {selectedLog.date} at {selectedLog.time} · {selectedLog.duration}
                   </p>
                 </div>
 
@@ -425,10 +422,10 @@ export default function CallLogsPage() {
               <button
                 key={tag}
                 onClick={() => setSelectedDisposition(tag)}
-                className={`text-xs font-normal font-outfit px-4 py-2 rounded-lg transition-all border ${
+                className={`h-[36px] px-[12px] py-[6px] rounded-[8px] border-[0.5px] font-outfit font-normal text-[16px] leading-[24px] tracking-normal transition-all cursor-pointer flex items-center justify-center ${
                   isActive 
-                    ? 'bg-[#18181B] border-[#18181B] text-white shadow-xs' 
-                    : 'bg-white border-[#E4E4E7] hover:bg-slate-50 text-[#64748B]'
+                    ? 'bg-[#18181B] border-[#18181B] text-white shadow-2xs' 
+                    : 'bg-white border-[#D4D4D4] hover:bg-slate-50 text-[#6D8A96]'
                 }`}
               >
                 {tag}
@@ -449,19 +446,20 @@ export default function CallLogsPage() {
                 <th className="table-th">Campaign</th>
                 <th className="table-th">Duration</th>
                 <th className="table-th">Disposition</th>
+                <th className="table-th">Date</th>
                 <th className="table-th">Time</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#E5E5E5]">
               {isLoading ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-slate-400 font-normal font-outfit">
+                  <td colSpan={7} className="px-6 py-12 text-center text-slate-400 font-normal font-outfit">
                     <span className="inline-block animate-pulse">Loading call logs...</span>
                   </td>
                 </tr>
               ) : error ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-red-500 font-normal font-outfit">
+                  <td colSpan={7} className="px-6 py-12 text-center text-red-500 font-normal font-outfit">
                     <div className="flex items-center justify-center gap-2">
                       <ShieldAlert className="h-5 w-5 text-red-500" />
                       <span>{error}</span>
@@ -492,6 +490,9 @@ export default function CallLogsPage() {
                     {getDispositionBadge(log.disposition)}
                   </td>
                   <td className="table-td">
+                    {log.date}
+                  </td>
+                  <td className="table-td">
                     {log.time}
                   </td>
                 </tr>
@@ -499,7 +500,7 @@ export default function CallLogsPage() {
 
               {!isLoading && !error && displayedLogs.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-slate-400 font-normal font-outfit">
+                  <td colSpan={7} className="px-6 py-12 text-center text-slate-400 font-normal font-outfit">
                     No call logs found matching your criteria.
                   </td>
                 </tr>

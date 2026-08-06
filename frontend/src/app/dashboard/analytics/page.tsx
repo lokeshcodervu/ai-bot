@@ -78,116 +78,82 @@ export default function AnalyticsPage() {
         const campaignsData = campaignsRes.ok ? await campaignsRes.json() : [];
 
         // 1. Basic Counts
-        const totalCallsCount = logsData.length || 1284;
-        setTotalCalls(logsData.length > 0 ? logsData.length : 1284);
+        const totalCallsCount = logsData.length;
+        setTotalCalls(totalCallsCount);
 
         const answeredCalls = logsData.filter((log: any) =>
-          log.call_disposition === 'Answered' || log.call_disposition === 'Connected'
+          log.call_disposition === 'Answered' || log.call_disposition === 'Connected' || log.status === 'Completed'
         );
         const answeredCount = answeredCalls.length;
 
-        const rate = totalCallsCount > 0 ? Math.round((answeredCount / totalCallsCount) * 100) : 38;
-        setConnectionRate(rate || 38);
+        const rate = totalCallsCount > 0 ? Math.round((answeredCount / totalCallsCount) * 100) : 0;
+        setConnectionRate(rate);
 
-        const convertedCount = leadsData.filter((l: any) => l.status === 'Converted').length || 94;
+        const convertedCount = leadsData.filter((l: any) => l.status === 'Converted' || l.call_disposition === 'Converted').length;
         setLeadsConverted(convertedCount);
 
         // 2. Average Call Duration
         const totalDuration = logsData.reduce((acc: number, log: any) => acc + (log.call_duration || 0), 0);
-        const avgDurationSeconds = totalCallsCount > 0 ? Math.round(totalDuration / totalCallsCount) : 167;
+        const avgDurationSeconds = totalCallsCount > 0 ? Math.round(totalDuration / totalCallsCount) : 0;
         const mins = Math.floor(avgDurationSeconds / 60);
         const secs = avgDurationSeconds % 60;
         setAvgCallDuration(`${mins}:${secs.toString().padStart(2, '0')}`);
 
-        // 3. Avg Cost per Call
-        const totalCost = totalDuration * 0.208;
-        const avgCost = totalCallsCount > 0 ? Math.round(totalCost / totalCallsCount) : 142;
-        setAvgCostPerLead(avgCost || 142);
+        // 3. Avg Cost per Call/Lead
+        const avgCost = totalCallsCount > 0 ? Math.round((totalDuration * 0.208) / totalCallsCount) : 0;
+        setAvgCostPerLead(avgCost);
 
         // 4. Performance by Campaign
-        const campaignsMap: { [key: string]: { name: string; calls: number; conv: number } } = {};
+        let performanceList: CampaignPerformance[] = [];
+        if (campaignsData.length > 0) {
+          performanceList = campaignsData.map((c: any) => {
+            const campLogs = logsData.filter((log: any) => log.campaign_id === c.id);
+            const callsCount = campLogs.length;
+            const convCount = campLogs.filter((log: any) => {
+              const lead = leadsData.find((l: any) => l.id === log.lead_id);
+              return lead?.status === 'Converted' || log.call_disposition === 'Converted';
+            }).length;
 
-        campaignsData.forEach((c: any) => {
-          campaignsMap[c.id] = { name: c.name, calls: 0, conv: 0 };
-        });
-
-        logsData.forEach((log: any) => {
-          const campId = log.campaign_id || 'direct';
-          const lead = leadsData.find((l: any) => l.id === log.lead_id);
-          const isConverted = lead ? lead.status === 'Converted' : false;
-
-          if (!campaignsMap[campId]) {
-            campaignsMap[campId] = {
-              name: campId === 'direct' ? 'Direct Calls' : 'Unknown Campaign',
-              calls: 0,
-              conv: 0
+            return {
+              campaignName: c.name,
+              calls: callsCount,
+              conv: convCount,
+              rate: callsCount > 0 ? `${((convCount / callsCount) * 100).toFixed(1)}%` : '0.0%'
             };
-          }
-          campaignsMap[campId].calls += 1;
-          if (isConverted) {
-            campaignsMap[campId].conv += 1;
-          }
-        });
-
-        let performanceList: CampaignPerformance[] = Object.values(campaignsMap)
-          .filter(c => c.calls > 0)
-          .map(c => ({
-            campaignName: c.name,
-            calls: c.calls,
-            conv: c.conv,
-            rate: c.calls > 0 ? `${((c.conv / c.calls) * 100).toFixed(1)}%` : '0.0%'
-          }));
-
-        // Fallback demo data matching Figma Image exactly if live data is empty
-        if (performanceList.length === 0) {
-          performanceList = [
-            { campaignName: 'Aarav Sharma', calls: 482, conv: 38, rate: '7.9%' },
-            { campaignName: 'Priya Iyer', calls: 612, conv: 51, rate: '8.3%' },
-            { campaignName: 'Aarav Sharma', calls: 156, conv: 12, rate: '7.7%' },
-            { campaignName: 'Priya Iyer', calls: 388, conv: 27, rate: '7.0%' },
-          ];
+          });
         }
-
         setCampaignPerformances(performanceList);
 
         // 5. Disposition Shares
-        const dispCounts = {
-          'Converted': 486,
-          'Needs Follow-up': 1230,
-          'Connected': 2140,
-          'Not Interested': 980,
-          'Busy / No Answer': 1402,
+        const dispCounts: { [key: string]: number } = {
+          'Converted': 0,
+          'Needs Follow-up': 0,
+          'Connected': 0,
+          'Not Interested': 0,
+          'Busy / No Answer': 0,
         };
 
-        if (logsData.length > 0) {
-          dispCounts['Converted'] = 0;
-          dispCounts['Needs Follow-up'] = 0;
-          dispCounts['Connected'] = 0;
-          dispCounts['Not Interested'] = 0;
-          dispCounts['Busy / No Answer'] = 0;
+        logsData.forEach((log: any) => {
+          const lead = leadsData.find((l: any) => l.id === log.lead_id);
+          const status = lead ? lead.status : '';
+          const disp = log.call_disposition;
 
-          logsData.forEach((log: any) => {
-            const lead = leadsData.find((l: any) => l.id === log.lead_id);
-            const status = lead ? lead.status : '';
-            const disp = log.call_disposition;
+          if (status === 'Converted' || disp === 'Converted') {
+            dispCounts['Converted']++;
+          } else if (status === 'Needs Follow-up' || disp === 'Needs Follow-up') {
+            dispCounts['Needs Follow-up']++;
+          } else if (status === 'Not Interested' || disp === 'Not Interested') {
+            dispCounts['Not Interested']++;
+          } else if (disp === 'Answered' || disp === 'Connected') {
+            dispCounts['Connected']++;
+          } else if (disp === 'Busy' || disp === 'No Answer' || disp === 'DND Skip' || disp === 'Failed') {
+            dispCounts['Busy / No Answer']++;
+          } else {
+            dispCounts['Connected']++;
+          }
+        });
 
-            if (status === 'Converted') {
-              dispCounts['Converted']++;
-            } else if (status === 'Needs Follow-up') {
-              dispCounts['Needs Follow-up']++;
-            } else if (status === 'Not Interested') {
-              dispCounts['Not Interested']++;
-            } else if (disp === 'Answered' || disp === 'Connected') {
-              dispCounts['Connected']++;
-            } else if (disp === 'Busy' || disp === 'No Answer' || disp === 'DND Skip' || disp === 'Failed') {
-              dispCounts['Busy / No Answer']++;
-            } else {
-              dispCounts['Connected']++;
-            }
-          });
-        }
-
-        const totalDispSum = Object.values(dispCounts).reduce((a, b) => a + b, 0) || 6238;
+        const totalDispSum = Object.values(dispCounts).reduce((a, b) => a + b, 0);
 
         const colorMap: { [key: string]: string } = {
           'Converted': '#059669',
@@ -363,6 +329,13 @@ export default function AnalyticsPage() {
                     <td className="table-td">{perf.rate}</td>
                   </tr>
                 ))}
+                {campaignPerformances.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-5 py-8 text-center text-slate-400 text-sm font-outfit">
+                      No campaign data found. Create a campaign to start tracking metrics.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

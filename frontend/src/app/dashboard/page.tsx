@@ -128,61 +128,56 @@ export default function DashboardOverview() {
         const leadsData = leadsRes && leadsRes.ok ? await leadsRes.json() : [];
         const campaignsData = campaignsRes && campaignsRes.ok ? await campaignsRes.json() : [];
 
-        // 2. Calculated Metrics from backend APIs
-        if (logsData.length > 0 || leadsData.length > 0 || campaignsData.length > 0) {
-          const callCount = logsData.length;
-          setTotalCalls(callCount);
+        // 2. Dynamic Calculated Metrics
+        const callCount = logsData.length;
+        setTotalCalls(callCount);
 
-          const answered = logsData.filter((log: any) =>
-            log.call_disposition === 'Answered' || log.call_disposition === 'Connected' || log.status === 'Completed'
-          ).length;
-          const rate = callCount > 0 ? Math.round((answered / callCount) * 100) : 0;
-          setConnectionRate(rate);
+        const answered = logsData.filter((log: any) =>
+          log.call_disposition === 'Answered' || log.call_disposition === 'Connected' || log.status === 'Completed'
+        ).length;
+        const rate = callCount > 0 ? Math.round((answered / callCount) * 100) : 0;
+        setConnectionRate(rate);
 
-          const convertedCount = leadsData.filter((l: any) => l.status === 'Converted' || l.call_disposition === 'Converted').length;
-          setLeadsConverted(convertedCount);
+        const convertedCount = leadsData.filter((l: any) => l.status === 'Converted' || l.call_disposition === 'Converted').length;
+        setLeadsConverted(convertedCount);
 
-          const costPerConv = convertedCount > 0 ? Math.round((callCount * 142) / (convertedCount || 1)) : 142;
-          setCostPerConversion(costPerConv);
+        const costPerConv = convertedCount > 0 ? Math.round((callCount * 142) / (convertedCount || 1)) : 0;
+        setCostPerConversion(costPerConv);
 
-          // 3. Dynamic Active Campaigns
-          if (campaignsData.length > 0) {
-            const mappedCampaigns = campaignsData.slice(0, 5).map((camp: any) => {
-              const leads = camp.leadsCount || camp.total_leads || (camp.leads ? camp.leads.length : 0);
-              const completed = camp.completedCalls || camp.calls_count || 0;
-              const progress = leads > 0 ? Math.min(100, Math.round((completed / leads) * 100)) : 0;
-              const style = getCampaignStatusStyle(camp.status);
-              return {
-                name: camp.name,
-                leads: leads,
-                progress: progress,
-                status: style.statusLabel,
-                statusColor: style.statusColor,
-                barColor: style.barColor
-              };
-            });
-            setDynamicCampaigns(mappedCampaigns);
-          }
+        // 3. Dynamic Active Campaigns
+        const mappedCampaigns = campaignsData.slice(0, 5).map((camp: any) => {
+          const leads = camp.leadsCount || camp.total_leads || (camp.leads ? camp.leads.length : 0);
+          const completed = camp.completedCalls || camp.calls_count || 0;
+          const progress = leads > 0 ? Math.min(100, Math.round((completed / leads) * 100)) : 0;
+          const style = getCampaignStatusStyle(camp.status);
+          return {
+            name: camp.name,
+            leads: leads,
+            progress: progress,
+            status: style.statusLabel,
+            statusColor: style.statusColor,
+            barColor: style.barColor
+          };
+        });
+        setDynamicCampaigns(mappedCampaigns);
 
-          // 4. Dynamic Recent Calls
-          if (logsData.length > 0) {
-            const mappedCalls = logsData.slice(0, 5).map((log: any) => {
-              const lead = leadsData.find((l: any) => l.id === log.lead_id);
-              const campaign = campaignsData.find((c: any) => c.id === log.campaign_id);
-              const disp = log.call_disposition || log.status || 'Connected';
-              return {
-                lead: lead?.name || log.lead_name || 'Unknown Lead',
-                phone: lead?.phone || log.phone_number || 'N/A',
-                campaign: campaign?.name || log.campaign_name || 'General Outreach',
-                duration: formatDuration(log.call_duration),
-                disposition: disp,
-                dispStyle: getDispositionStyle(disp),
-                time: formatRelativeTime(log.created_at)
-              };
-            });
-            setDynamicRecentCalls(mappedCalls);
-          }
-        }
+        // 4. Dynamic Recent Calls
+        const mappedCalls = logsData.slice(0, 5).map((log: any) => {
+          const lead = leadsData.find((l: any) => l.id === log.lead_id);
+          const campaign = campaignsData.find((c: any) => c.id === log.campaign_id);
+          const disp = log.call_disposition || log.status || 'Connected';
+          return {
+            lead: lead?.name || log.lead_name || 'Unknown Lead',
+            phone: lead?.phone || log.phone_number || 'N/A',
+            campaign: campaign?.name || log.campaign_name || 'General Outreach',
+            duration: formatDuration(log.call_duration),
+            disposition: disp,
+            dispStyle: getDispositionStyle(disp),
+            time: formatRelativeTime(log.created_at)
+          };
+        });
+        setDynamicRecentCalls(mappedCalls);
+
       } catch (err) {
         console.error('Error loading dynamic dashboard data:', err);
       } finally {
@@ -237,7 +232,7 @@ export default function DashboardOverview() {
   const topMetrics = [
     { 
       name: 'Total Calls Made', 
-      value: totalCalls !== null ? totalCalls.toLocaleString() : '1,284', 
+      value: totalCalls !== null ? totalCalls.toLocaleString() : '0', 
       change: '+12.4% this week',
       isPositive: true,
       icon: Phone,
@@ -245,7 +240,7 @@ export default function DashboardOverview() {
     },
     { 
       name: 'Connection Rate', 
-      value: connectionRate !== null ? `${connectionRate}%` : '38%', 
+      value: connectionRate !== null ? `${connectionRate}%` : '0%', 
       change: '+3.1% this week',
       isPositive: true,
       icon: TrendingUp,
@@ -253,7 +248,7 @@ export default function DashboardOverview() {
     },
     { 
       name: 'Leads Converted', 
-      value: leadsConverted !== null ? leadsConverted.toLocaleString() : '94', 
+      value: leadsConverted !== null ? leadsConverted.toLocaleString() : '0', 
       change: '-2.8% this week',
       isPositive: false,
       icon: CheckCircle2,
@@ -261,7 +256,7 @@ export default function DashboardOverview() {
     },
     { 
       name: 'Cost per Conversion', 
-      value: costPerConversion !== null ? costPerConversion.toLocaleString() : '142', 
+      value: costPerConversion !== null ? `₹${costPerConversion.toLocaleString()}` : '₹0', 
       change: '+5.8% this week',
       isPositive: true,
       icon: null,
@@ -269,21 +264,8 @@ export default function DashboardOverview() {
     }
   ];
 
-  // Active Campaigns list fallback
-  const activeCampaignsList = dynamicCampaigns || [
-    { name: 'Q3 React Bootcamp', leads: 240, progress: 62, status: 'Live', statusColor: 'bg-[#FFF1F2] text-[#F43F5E] border-[#FECDD3]', barColor: 'bg-[#F43F5E]' },
-    { name: 'Python Admission', leads: 180, progress: 100, status: 'Completed', statusColor: 'bg-[#ECFDF5] text-[#059669] border-[#A7F3D0]', barColor: 'bg-[#059669]' },
-    { name: 'Data Science Outreach', leads: 90, progress: 0, status: 'Paused', statusColor: 'bg-[#FFF7ED] text-[#EA580C] border-[#FFEDD5]', barColor: 'bg-[#E5E5E5]' }
-  ];
-
-  // Recent Call Records fallback
-  const recentCallsList = dynamicRecentCalls || [
-    { lead: 'Aarav Sharma', phone: '+91 9493949393', campaign: 'Q3 React Bootcamp', duration: '3:42', disposition: 'Converted', dispStyle: 'bg-[#ECFDF5] text-[#059669] border-[#A7F3D0]', time: '2 min ago' },
-    { lead: 'Priya Iyer', phone: '+91 4857933838', campaign: 'Python Admission', duration: '1:18', disposition: 'Not Interested', dispStyle: 'bg-[#FFF1F2] text-[#F43F5E] border-[#FECDD3]', time: '8 min ago' },
-    { lead: 'Aarav Sharma', phone: '+91 9493949393', campaign: 'Q3 React Bootcamp', duration: '3:42', disposition: 'Needs Follow-up', dispStyle: 'bg-[#FFF7ED] text-[#EA580C] border-[#FFEDD5]', time: '14 min ago' },
-    { lead: 'Priya Iyer', phone: '+91 4857933838', campaign: 'Python Admission', duration: '1:18', disposition: 'Connected', dispStyle: 'bg-[#EFF6FF] text-[#2563EB] border-[#BFDBFE]', time: '22 min ago' },
-    { lead: 'Priya Iyer', phone: '+91 4857933838', campaign: 'Python Admission', duration: '1:18', disposition: 'Busy', dispStyle: 'text-slate-400 font-medium', time: '31 min ago' }
-  ];
+  const activeCampaignsList = dynamicCampaigns || [];
+  const recentCallsList = dynamicRecentCalls || [];
 
   return (
     <div className="space-y-6 text-slate-800 font-sans">
@@ -303,7 +285,11 @@ export default function DashboardOverview() {
                 </p>
 
                 <h3 className="text-3xl font-extrabold font-outfit text-slate-900 leading-none pt-1">
-                  {m.value}
+                  {isLoading ? (
+                    <div className="h-8 w-24 bg-slate-200 animate-pulse rounded my-1" />
+                  ) : (
+                    m.value
+                  )}
                 </h3>
 
                 <p className={`text-xs font-bold pt-1 ${m.isPositive ? 'text-[#10b981]' : 'text-[#ef4444]'}`}>
@@ -336,7 +322,7 @@ export default function DashboardOverview() {
 
             <div>
               <h3 className="text-3xl font-extrabold font-outfit text-slate-900">
-                ₹{(wallet?.balance !== undefined ? wallet.balance : 10000).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                ₹{(wallet?.balance !== undefined ? wallet.balance : 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </h3>
               <p className="text-xs text-slate-400 font-medium mt-1">of ₹10,000 monthly budget</p>
             </div>
@@ -389,25 +375,42 @@ export default function DashboardOverview() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#F0F0F0]">
-                {activeCampaignsList.map((camp, idx) => (
-                  <tr key={camp.name + idx} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="py-4 font-bold text-slate-900">{camp.name}</td>
-                    <td className="py-4 px-4 font-semibold text-slate-700">{camp.leads}</td>
-                    <td className="py-4 px-4">
-                      <div className="flex items-center space-x-3 min-w-[140px]">
-                        <div className="h-1.5 w-28 bg-[#E5E5E5] rounded-full overflow-hidden flex-shrink-0">
-                          <div className={`h-full ${camp.barColor} rounded-full`} style={{ width: `${camp.progress}%` }} />
-                        </div>
-                        <span className="text-slate-600 font-bold text-[11px]">{camp.progress}%</span>
-                      </div>
-                    </td>
-                    <td className="py-4 text-right">
-                      <span className={`inline-block px-3 py-1 rounded-[8px] border text-xs font-semibold ${camp.statusColor}`}>
-                        {camp.status}
-                      </span>
+                {isLoading ? (
+                  [1, 2, 3].map((n) => (
+                    <tr key={n}>
+                      <td className="py-4"><div className="h-4 w-32 bg-slate-200 animate-pulse rounded" /></td>
+                      <td className="py-4 px-4"><div className="h-4 w-12 bg-slate-200 animate-pulse rounded" /></td>
+                      <td className="py-4 px-4"><div className="h-4 w-28 bg-slate-200 animate-pulse rounded" /></td>
+                      <td className="py-4 text-right"><div className="h-5 w-16 bg-slate-200 animate-pulse rounded ml-auto" /></td>
+                    </tr>
+                  ))
+                ) : activeCampaignsList.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="py-6 text-center text-slate-400 font-medium">
+                      No active campaigns found.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  activeCampaignsList.map((camp, idx) => (
+                    <tr key={camp.name + idx} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="py-4 font-bold text-slate-900">{camp.name}</td>
+                      <td className="py-4 px-4 font-semibold text-slate-700">{camp.leads}</td>
+                      <td className="py-4 px-4">
+                        <div className="flex items-center space-x-3 min-w-[140px]">
+                          <div className="h-1.5 w-28 bg-[#E5E5E5] rounded-full overflow-hidden flex-shrink-0">
+                            <div className={`h-full ${camp.barColor} rounded-full`} style={{ width: `${camp.progress}%` }} />
+                          </div>
+                          <span className="text-slate-600 font-bold text-[11px]">{camp.progress}%</span>
+                        </div>
+                      </td>
+                      <td className="py-4 text-right">
+                        <span className={`inline-block px-3 py-1 rounded-[8px] border text-xs font-semibold ${camp.statusColor}`}>
+                          {camp.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -441,26 +444,45 @@ export default function DashboardOverview() {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#F0F0F0]">
-              {recentCallsList.map((call, idx) => (
-                <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
-                  <td className="py-3.5 font-bold text-slate-900">{call.lead}</td>
-                  <td className="py-3.5 px-4 text-slate-600 font-semibold">{call.phone}</td>
-                  <td className="py-3.5 px-4 text-slate-600 font-semibold">{call.campaign}</td>
-                  <td className="py-3.5 px-4 text-slate-600 font-bold">{call.duration}</td>
-                  <td className="py-3.5 px-4">
-                    {call.dispStyle.includes('border') ? (
-                      <span className={`inline-block px-3 py-1 rounded-[8px] border text-xs font-semibold ${call.dispStyle}`}>
-                        {call.disposition}
-                      </span>
-                    ) : (
-                      <span className={`text-xs ${call.dispStyle}`}>
-                        {call.disposition}
-                      </span>
-                    )}
+              {isLoading ? (
+                [1, 2, 3, 4, 5].map((n) => (
+                  <tr key={n}>
+                    <td className="py-3.5"><div className="h-4 w-24 bg-slate-200 animate-pulse rounded" /></td>
+                    <td className="py-3.5 px-4"><div className="h-4 w-28 bg-slate-200 animate-pulse rounded" /></td>
+                    <td className="py-3.5 px-4"><div className="h-4 w-32 bg-slate-200 animate-pulse rounded" /></td>
+                    <td className="py-3.5 px-4"><div className="h-4 w-12 bg-slate-200 animate-pulse rounded" /></td>
+                    <td className="py-3.5 px-4"><div className="h-5 w-20 bg-slate-200 animate-pulse rounded" /></td>
+                    <td className="py-3.5 text-right"><div className="h-4 w-16 bg-slate-200 animate-pulse rounded ml-auto" /></td>
+                  </tr>
+                ))
+              ) : recentCallsList.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-6 text-center text-slate-400 font-medium">
+                    No recent calls found.
                   </td>
-                  <td className="py-3.5 text-slate-400 font-semibold text-right">{call.time}</td>
                 </tr>
-              ))}
+              ) : (
+                recentCallsList.map((call, idx) => (
+                  <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="py-3.5 font-bold text-slate-900">{call.lead}</td>
+                    <td className="py-3.5 px-4 text-slate-600 font-semibold">{call.phone}</td>
+                    <td className="py-3.5 px-4 text-slate-600 font-semibold">{call.campaign}</td>
+                    <td className="py-3.5 px-4 text-slate-600 font-bold">{call.duration}</td>
+                    <td className="py-3.5 px-4">
+                      {call.dispStyle.includes('border') ? (
+                        <span className={`inline-block px-3 py-1 rounded-[8px] border text-xs font-semibold ${call.dispStyle}`}>
+                          {call.disposition}
+                        </span>
+                      ) : (
+                        <span className={`text-xs ${call.dispStyle}`}>
+                          {call.disposition}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3.5 text-slate-400 font-semibold text-right">{call.time}</td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

@@ -978,7 +978,7 @@ export default function LeadsCrmPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E5E5E5]">
-                {displayedLeads.map((lead) => {
+                {displayedLeads.filter(l => l.status === 'Imported').map((lead) => {
                   const stage = getStageDisplay(lead);
                   return (
                     <tr key={lead.id} className="table-row">
@@ -999,10 +999,10 @@ export default function LeadsCrmPage() {
                   );
                 })}
 
-                {displayedLeads.length === 0 && (
+                {displayedLeads.filter(l => l.status === 'Imported').length === 0 && (
                   <tr>
                     <td colSpan={6} className="px-6 py-12 text-center text-slate-400 font-medium bg-white">
-                      No leads found matching your search. Try importing some prospects or adding one manually.
+                      No new leads found. Try importing some prospects or adding one manually.
                     </td>
                   </tr>
                 )}

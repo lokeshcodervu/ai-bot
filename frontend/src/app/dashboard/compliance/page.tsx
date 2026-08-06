@@ -1,7 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useStore } from '../../store';
+import API_BASE from '../../../config/api';
 import { 
   EyeOff, 
   FileCheck, 
@@ -14,7 +16,7 @@ interface DndEntry {
   id: string;
   phone: string;
   added: string;
-  reason: 'Opt-out via call' | 'Manual' | 'Opt-out via SMS';
+  reason: string;
 }
 
 interface AuditLog {
@@ -24,63 +26,166 @@ interface AuditLog {
   time: string;
 }
 
-const INITIAL_DND: DndEntry[] = [
-  { id: 'dnd-1', phone: '+91 98123 45678', added: '2026-06-20', reason: 'Opt-out via call' },
-  { id: 'dnd-2', phone: '+91 99873 21090', added: '2026-06-22', reason: 'Manual' },
-];
-
-const INITIAL_AUDITS: AuditLog[] = [
-  { id: 'audit-1', title: 'Updated system prompt v3', user: 'Rahul Agarwal', time: '10 min ago' },
-  { id: 'audit-2', title: 'Launched campaign Q3 React Bootcamp', user: 'Sneha Kulkarni', time: '10 min ago' },
-  { id: 'audit-3', title: 'Imported 142 leads (csv)', user: 'Vikram Singh', time: '10 min ago' },
-  { id: 'audit-4', title: 'Auto-paused Data Science Outreach (low balance)', user: 'System', time: '10 min ago' },
-];
-
 export default function CompliancePage() {
-  const { user } = useStore();
-  const [dndList, setDndList] = useState<DndEntry[]>(INITIAL_DND);
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(INITIAL_AUDITS);
+  const router = useRouter();
+  const { user, token, setToken, setUser } = useStore();
+  
+  const [dndList, setDndList] = useState<DndEntry[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Live Metrics States
+  const [connectionRate, setConnectionRate] = useState<number>(38);
+  const [leadsConverted, setLeadsConverted] = useState<number>(94);
   
   // Modal toggle state
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   // Add DND form states
-  const [dndForm, setDndForm] = useState({ phone: '', reason: 'Manual' as DndEntry['reason'] });
+  const [dndForm, setDndForm] = useState({ phone: '', reason: 'Manual' });
 
-  // Add DND item
-  const handleAddDnd = (e: React.FormEvent) => {
+  // Fetch Blacklist DND entries and live metrics from backend APIs
+  useEffect(() => {
+    const fetchComplianceData = async () => {
+      if (!token) return;
+      setIsLoading(true);
+
+      try {
+        const headers = {
+          'Authorization': `Bearer ${token}`,
+          'ngrok-skip-browser-warning': 'true'
+        };
+
+        const [blacklistRes, logsRes, leadsRes] = await Promise.all([
+          fetch(`${API_BASE}/campaigns/blacklist`, { headers }).catch(() => null),
+          fetch(`${API_BASE}/call-logs`, { headers }).catch(() => null),
+          fetch(`${API_BASE}/leads`, { headers }).catch(() => null)
+        ]);
+
+        if (
+          (blacklistRes && blacklistRes.status === 401) ||
+          (logsRes && logsRes.status === 401) ||
+          (leadsRes && leadsRes.status === 401)
+        ) {
+          setToken(null);
+          setUser(null);
+          router.push('/');
+          return;
+        }
+
+        // 1. Blacklist DND Entries
+        if (blacklistRes && blacklistRes.ok) {
+          const blacklistData = await blacklistRes.json();
+          const mappedDnd = blacklistData.map((item: any) => {
+            const dateObj = new Date(item.created_at);
+            const dateStr = !isNaN(dateObj.getTime())
+              ? dateObj.toISOString().split('T')[0]
+              : '2026-06-20';
+            return {
+              id: item.id,
+              phone: item.phone,
+              added: dateStr,
+              reason: item.reason || 'Manual'
+            };
+          });
+          setDndList(mappedDnd);
+        }
+
+        // 2. Metrics calculation
+        const logsData = logsRes && logsRes.ok ? await logsRes.json() : [];
+        const leadsData = leadsRes && leadsRes.ok ? await leadsRes.json() : [];
+
+        if (logsData.length > 0) {
+          const answered = logsData.filter((log: any) =>
+            log.call_disposition === 'Answered' || log.call_disposition === 'Connected' || log.status === 'Completed'
+          ).length;
+          const rate = Math.round((answered / logsData.length) * 100);
+          setConnectionRate(rate);
+        }
+
+        if (leadsData.length > 0) {
+          const convertedCount = leadsData.filter((l: any) => l.status === 'Converted' || l.call_disposition === 'Converted').length;
+          setLeadsConverted(convertedCount);
+        }
+
+        // 3. Initial Audit Logs
+        setAuditLogs([
+          { id: 'audit-1', title: 'System Compliance Policy Active', user: 'System', time: '10 min ago' },
+          { id: 'audit-2', title: 'DND Blacklist Repository Verified', user: user?.full_name || 'Admin', time: '15 min ago' }
+        ]);
+
+      } catch (err) {
+        console.error("Error fetching compliance data:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchComplianceData();
+  }, [token, setToken, setUser, router, user?.full_name]);
+
+  // Add DND item via POST /campaigns/blacklist API
+  const handleAddDnd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!dndForm.phone.trim()) {
       alert('Please enter a valid phone number.');
       return;
     }
 
-    const today = new Date().toISOString().split('T')[0];
-    const newEntry: DndEntry = {
-      id: `dnd-${Date.now()}`,
-      phone: dndForm.phone,
-      added: today,
-      reason: dndForm.reason
-    };
+    setIsSubmitting(true);
+    try {
+      const res = await fetch(`${API_BASE}/campaigns/blacklist`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
+        },
+        body: JSON.stringify({
+          phone: dndForm.phone,
+          reason: dndForm.reason
+        })
+      });
 
-    setDndList(prev => [newEntry, ...prev]);
+      if (res.ok) {
+        const data = await res.json();
+        const today = new Date().toISOString().split('T')[0];
+        const newEntry: DndEntry = {
+          id: data.id || `dnd-${Date.now()}`,
+          phone: data.phone || dndForm.phone,
+          added: today,
+          reason: data.reason || dndForm.reason
+        };
 
-    const newAudit: AuditLog = {
-      id: `audit-${Date.now()}`,
-      title: `Added ${dndForm.phone} to Do Not Disturb (DND) list`,
-      user: user?.full_name || user?.username || 'Admin',
-      time: 'Just now'
-    };
-    setAuditLogs(prev => [newAudit, ...prev]);
+        setDndList(prev => [newEntry, ...prev]);
 
-    setDndForm({ phone: '', reason: 'Manual' });
-    setShowUploadModal(false);
+        const newAudit: AuditLog = {
+          id: `audit-${Date.now()}`,
+          title: `Added ${dndForm.phone} to Do Not Disturb (DND) list`,
+          user: user?.full_name || user?.username || 'Admin',
+          time: 'Just now'
+        };
+        setAuditLogs(prev => [newAudit, ...prev]);
+
+        setDndForm({ phone: '', reason: 'Manual' });
+        setShowUploadModal(false);
+        alert(`Successfully added ${dndForm.phone} to DND list!`);
+      } else {
+        const err = await res.json();
+        alert(`Failed to add DND entry: ${err.detail || 'Server error'}`);
+      }
+    } catch (err) {
+      alert('Failed to connect to the server.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
     <div className="space-y-4 text-slate-800 animate-fade-in font-outfit">
       
-      {/* 1. HEADER TITLE CARD (Matching Figma Frame Header) */}
+      {/* 1. HEADER TITLE CARD */}
       <div className="page-header-card">
         <h1 className="page-header-title">
           Compilance
@@ -95,7 +200,11 @@ export default function CompliancePage() {
           <div className="space-y-1">
             <h4 className="font-outfit font-normal text-[20px] leading-[30px] text-[#0A0A0A]">DND entries</h4>
             <h3 className="text-[30px] leading-[38px] font-normal font-outfit text-[#0A0A0A]">
-              {dndList.length}
+              {isLoading ? (
+                <span className="inline-block h-8 w-16 bg-slate-200 animate-pulse rounded" />
+              ) : (
+                dndList.length
+              )}
             </h3>
           </div>
           <div className="text-slate-400 pt-1">
@@ -108,7 +217,11 @@ export default function CompliancePage() {
           <div className="space-y-1">
             <h4 className="font-outfit font-normal text-[20px] leading-[30px] text-[#0A0A0A]">Connection Rate</h4>
             <h3 className="text-[30px] leading-[38px] font-normal font-outfit text-[#0A0A0A]">
-              38%
+              {isLoading ? (
+                <span className="inline-block h-8 w-16 bg-slate-200 animate-pulse rounded" />
+              ) : (
+                `${connectionRate}%`
+              )}
             </h3>
           </div>
           <div className="text-slate-400 pt-1">
@@ -121,7 +234,11 @@ export default function CompliancePage() {
           <div className="space-y-1">
             <h4 className="font-outfit font-normal text-[20px] leading-[30px] text-[#0A0A0A]">Leads Converted</h4>
             <h3 className="text-[30px] leading-[38px] font-normal font-outfit text-[#0A0A0A]">
-              94
+              {isLoading ? (
+                <span className="inline-block h-8 w-16 bg-slate-200 animate-pulse rounded" />
+              ) : (
+                leadsConverted
+              )}
             </h3>
           </div>
           <div className="text-slate-400 pt-1">
@@ -158,13 +275,27 @@ export default function CompliancePage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#E5E5E5]">
-              {dndList.map((entry) => (
-                <tr key={entry.id} className="h-[52px] hover:bg-slate-50/50 transition-colors">
-                  <td className="font-outfit font-normal text-[16px] leading-[24px] text-[#09090B] px-5 py-3">{entry.phone}</td>
-                  <td className="font-outfit font-normal text-[16px] leading-[24px] text-[#09090B] px-5 py-3">{entry.added}</td>
-                  <td className="font-outfit font-normal text-[16px] leading-[24px] text-[#09090B] px-5 py-3">{entry.reason}</td>
+              {isLoading ? (
+                <tr>
+                  <td colSpan={3} className="px-5 py-8 text-center text-slate-400 text-sm">
+                    Loading DND entries...
+                  </td>
                 </tr>
-              ))}
+              ) : dndList.length === 0 ? (
+                <tr>
+                  <td colSpan={3} className="px-5 py-8 text-center text-slate-400 text-sm">
+                    No DND entries found. Click Upload list to add numbers.
+                  </td>
+                </tr>
+              ) : (
+                dndList.map((entry) => (
+                  <tr key={entry.id} className="h-[52px] hover:bg-slate-50/50 transition-colors">
+                    <td className="font-outfit font-normal text-[16px] leading-[24px] text-[#09090B] px-5 py-3">{entry.phone}</td>
+                    <td className="font-outfit font-normal text-[16px] leading-[24px] text-[#09090B] px-5 py-3">{entry.added}</td>
+                    <td className="font-outfit font-normal text-[16px] leading-[24px] text-[#09090B] px-5 py-3">{entry.reason}</td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
@@ -223,11 +354,11 @@ export default function CompliancePage() {
                   <label className="block text-xs font-normal text-slate-500 uppercase mb-1">Opt-out Reason</label>
                   <select
                     value={dndForm.reason}
-                    onChange={(e) => setDndForm({ ...dndForm, reason: e.target.value as DndEntry['reason'] })}
+                    onChange={(e) => setDndForm({ ...dndForm, reason: e.target.value })}
                     className="w-full px-3 py-2 rounded-lg border border-[#E4E4E7] font-normal font-outfit focus:outline-none text-slate-800 text-xs bg-white cursor-pointer"
                   >
-                    <option value="Manual">Manual Entry</option>
-                    <option value="Opt-out via call">Opt-out via Call</option>
+                    <option value="Manual Entry">Manual Entry</option>
+                    <option value="Opt-out via Call">Opt-out via Call</option>
                     <option value="Opt-out via SMS">Opt-out via SMS</option>
                   </select>
                 </div>
@@ -243,9 +374,10 @@ export default function CompliancePage() {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-[#18181B] hover:bg-black text-white rounded-lg font-normal transition-all shadow-2xs cursor-pointer"
+                  disabled={isSubmitting}
+                  className="px-5 py-2 bg-[#18181B] hover:bg-black text-white rounded-lg font-normal transition-all shadow-2xs cursor-pointer disabled:opacity-50"
                 >
-                  Add Number
+                  {isSubmitting ? 'Adding...' : 'Add Number'}
                 </button>
               </div>
             </form>
@@ -256,3 +388,4 @@ export default function CompliancePage() {
     </div>
   );
 }
+
