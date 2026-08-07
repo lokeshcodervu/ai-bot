@@ -31,7 +31,8 @@ interface LeadWithSource extends Lead {
 }
 
 export default function LeadsCrmPage() {
-  const { token } = useStore();
+  const { token, tenant } = useStore();
+  const isReadOnly = tenant?.verificationStatus !== 'APPROVED';
 
   // Local state for leads
   const [leadsList, setLeadsList] = useState<LeadWithSource[]>([]);
@@ -757,8 +758,20 @@ export default function LeadsCrmPage() {
 
         <div className="flex items-center space-x-3">
           <button
-            onClick={() => setShowAddLeadModal(true)}
-            className="flex items-center text-xs font-bold px-4 py-2.5 bg-black hover:bg-[#1f2937] text-white rounded-lg transition-colors shadow-xs cursor-pointer"
+            onClick={() => {
+              if (isReadOnly) {
+                alert('Action Disabled: Company verification is currently pending approval.');
+                return;
+              }
+              setShowAddLeadModal(true);
+            }}
+            disabled={isReadOnly}
+            title={isReadOnly ? 'Action Locked: Verification Pending' : 'Add New Lead'}
+            className={`flex items-center text-xs font-bold px-4 py-2.5 rounded-lg transition-colors shadow-xs ${
+              isReadOnly
+                ? 'bg-slate-300 text-slate-500 cursor-not-allowed opacity-60'
+                : 'bg-black hover:bg-[#1f2937] text-white cursor-pointer'
+            }`}
           >
             <Plus className="h-4 w-4 mr-1.5" /> Add Lead
           </button>
@@ -843,8 +856,20 @@ export default function LeadsCrmPage() {
             </div>
 
             <button
-              onClick={() => setShowImportModal(true)}
-              className="flex items-center text-xs font-bold px-4 py-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg transition-colors shadow-xs"
+              onClick={() => {
+                if (isReadOnly) {
+                  alert('Action Disabled: Company verification is currently pending approval.');
+                  return;
+                }
+                setShowImportModal(true);
+              }}
+              disabled={isReadOnly}
+              title={isReadOnly ? 'Action Locked: Verification Pending' : 'Import Leads CSV'}
+              className={`flex items-center text-xs font-bold px-4 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-lg transition-colors shadow-xs ${
+                isReadOnly
+                  ? 'opacity-50 cursor-not-allowed'
+                  : 'hover:bg-slate-50 cursor-pointer'
+              }`}
             >
               <Download className="h-4 w-4 mr-2 text-slate-500" /> Import
             </button>

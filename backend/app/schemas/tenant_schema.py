@@ -4,13 +4,17 @@ from pydantic import BaseModel, ConfigDict, EmailStr, HttpUrl, Field
 from datetime import datetime
 from uuid import UUID
 from typing import Optional, Dict, Any
-from app.models.tenant import AIProvider, VoiceProvider, STTProvider
+from app.models.tenant import AIProvider, VoiceProvider, STTProvider, TenantVerificationStatus
 
 class TenantBase(BaseModel):
     company_name: str
     slug: str
     company_email: EmailStr
     company_phone: Optional[str] = None
+    country: Optional[str] = "India"
+    company_number: Optional[str] = None
+    registered_address: Optional[str] = None
+    owner_name: Optional[str] = None
     website: Optional[str] = None
     timezone: Optional[str] = "Asia/Kolkata"
     industry: Optional[str] = None
@@ -21,6 +25,10 @@ class TenantCreate(TenantBase):
 class TenantUpdate(BaseModel):
     company_name: Optional[str] = None
     company_phone: Optional[str] = None
+    country: Optional[str] = None
+    company_number: Optional[str] = None
+    registered_address: Optional[str] = None
+    owner_name: Optional[str] = None
     website: Optional[str] = None
     logo: Optional[str] = None
     address: Optional[str] = None
@@ -63,6 +71,14 @@ class TenantOut(TenantBase):
     id: UUID
     logo: Optional[str] = None
     address: Optional[str] = None
+    country: Optional[str] = "India"
+    company_number: Optional[str] = None
+    registered_address: Optional[str] = None
+    owner_name: Optional[str] = None
+    verification_status: TenantVerificationStatus
+    verification_doc_url: Optional[str] = None
+    rejection_reason: Optional[str] = None
+    allowed_modules: Optional[Any] = None
     ai_provider: AIProvider
     ai_model: str
     ai_temperature: float

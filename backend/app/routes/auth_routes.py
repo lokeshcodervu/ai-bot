@@ -200,40 +200,67 @@ INSURANCE_DASHBOARD_DATA = {
     ]
 }
 
+@router.get("/me")
+def get_me(
+    current_user: User = Depends(auth_controller.get_current_user)
+):
+    """Retrieve current logged in user profile with tenant verification state."""
+    tenant_info = None
+    if current_user.tenant:
+        tenant_info = {
+            "id": current_user.tenant.id,
+            "company_name": current_user.tenant.company_name,
+            "country": current_user.tenant.country or "India",
+            "company_email": current_user.tenant.company_email,
+            "company_phone": current_user.tenant.company_phone,
+            "company_number": current_user.tenant.company_number,
+            "registered_address": current_user.tenant.registered_address,
+            "owner_name": current_user.tenant.owner_name,
+            "verification_status": current_user.tenant.verification_status,
+            "verification_doc_url": current_user.tenant.verification_doc_url,
+            "rejection_reason": current_user.tenant.rejection_reason,
+            "allowed_modules": current_user.tenant.allowed_modules,
+            "is_active": current_user.tenant.is_active
+        }
+
+    return {
+        "id": current_user.id,
+        "username": current_user.username,
+        "email": current_user.email,
+        "full_name": current_user.full_name,
+        "role": current_user.role,
+        "tenant": tenant_info
+    }
+
 @dashboard_router.get("")
 def read_dashboard(
     current_user: User = Depends(auth_controller.get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Retrieve dashboard data. Gated by payment success."""
-    if not current_user.tenant or not current_user.tenant.is_payment_done:
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail="Subscription payment required to access the dashboard."
-        )
-        
+    """Retrieve dashboard data. Includes tenant verification status."""
     plan_type = "BASIC"
-    if current_user.tenant.subscription:
+    if current_user.tenant and current_user.tenant.subscription:
         plan_type = current_user.tenant.subscription.plan_id.upper()
         
     from app.models.lead import Lead
     from app.models.call_log import CallLog
     from app.models.campaign import Campaign, CampaignStatus
 
-    db_leads_count = db.query(Lead).filter(Lead.tenant_id == current_user.tenant_id).count()
-    db_calls_count = db.query(CallLog).filter(CallLog.tenant_id == current_user.tenant_id).count()
+    tenant_id = current_user.tenant_id
+    db_leads_count = db.query(Lead).filter(Lead.tenant_id == tenant_id).count() if tenant_id else 0
+    db_calls_count = db.query(CallLog).filter(CallLog.tenant_id == tenant_id).count() if tenant_id else 0
     db_answered_count = db.query(CallLog).filter(
-        CallLog.tenant_id == current_user.tenant_id, 
+        CallLog.tenant_id == tenant_id, 
         CallLog.call_disposition == "Answered"
-    ).count()
+    ).count() if tenant_id else 0
     db_active_campaigns = db.query(Campaign).filter(
-        Campaign.tenant_id == current_user.tenant_id,
+        Campaign.tenant_id == tenant_id,
         Campaign.status == CampaignStatus.ACTIVE
-    ).count()
+    ).count() if tenant_id else 0
     
     connection_rate = round((db_answered_count / db_calls_count) * 100, 2) if db_calls_count > 0 else 0.0
 
-    industry = current_user.tenant.industry
+    industry = current_user.tenant.industry if current_user.tenant else "General"
     if industry == "Real Estate":
         industry_data = REAL_ESTATE_DASHBOARD_DATA.copy()
         if db_leads_count > 0:
@@ -249,7 +276,6 @@ def read_dashboard(
             industry_data["total_calls"] = db_calls_count
             industry_data["connection_rate"] = f"{connection_rate}%"
     else:
-        # Fallback default dashboard data for other industries
         industry_data = {
             "industry": industry or "General",
             "leads_count": db_leads_count,
@@ -269,9 +295,18 @@ def read_dashboard(
             "full_name": current_user.full_name
         },
         "tenant": {
-            "company_name": current_user.tenant.company_name,
+            "id": current_user.tenant.id if current_user.tenant else None,
+            "company_name": current_user.tenant.company_name if current_user.tenant else "Default",
+            "country": current_user.tenant.country if current_user.tenant else "India",
+            "company_number": current_user.tenant.company_number if current_user.tenant else None,
+            "registered_address": current_user.tenant.registered_address if current_user.tenant else None,
+            "owner_name": current_user.tenant.owner_name if current_user.tenant else None,
+            "verification_status": current_user.tenant.verification_status if current_user.tenant else "APPROVED",
+            "verification_doc_url": current_user.tenant.verification_doc_url if current_user.tenant else None,
+            "rejection_reason": current_user.tenant.rejection_reason if current_user.tenant else None,
+            "allowed_modules": current_user.tenant.allowed_modules if current_user.tenant else [],
             "plan_type": plan_type,
-            "is_payment_done": current_user.tenant.is_payment_done,
+            "is_payment_done": current_user.tenant.is_payment_done if current_user.tenant else True,
             "industry": industry,
             "industry_data": industry_data
         }

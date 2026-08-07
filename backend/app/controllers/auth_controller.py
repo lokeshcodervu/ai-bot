@@ -97,3 +97,26 @@ def require_role(allowed_roles: list[UserRole]):
             )
         return current_user
     return role_dependency
+
+def require_approved_tenant(current_user = Depends(get_current_user)):
+    """
+    Dependency ensuring the tenant workspace is APPROVED by Super Admin.
+    Super Admin users bypass this check.
+    """
+    if current_user.role == UserRole.SUPER_ADMIN:
+        return current_user
+
+    if not current_user.tenant:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User is not associated with any tenant workspace."
+        )
+
+    from app.models.tenant import TenantVerificationStatus
+    if current_user.tenant.verification_status != TenantVerificationStatus.APPROVED:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your company verification is currently PENDING or REJECTED. Modifying actions are restricted until approved."
+        )
+
+    return current_user

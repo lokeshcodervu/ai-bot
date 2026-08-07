@@ -25,6 +25,16 @@ export interface Campaign {
 export interface Tenant {
   id: string;
   companyName: string;
+  country?: 'India' | 'United Kingdom';
+  companyEmail?: string;
+  companyPhone?: string;
+  companyNumber?: string;
+  registeredAddress?: string;
+  ownerName?: string;
+  verificationStatus?: 'PENDING' | 'APPROVED' | 'REJECTED' | 'SUSPENDED';
+  verificationDocUrl?: string;
+  rejectionReason?: string;
+  allowedModules?: string[];
   website: string;
   timezone: string;
   voiceId: string;
@@ -135,7 +145,7 @@ export const useStore = create<AppState>((set) => ({
         const storedToken = localStorage.getItem('token');
         const storedUser = localStorage.getItem('user');
         const storedTenant = localStorage.getItem('tenant');
-        
+
         let parsedUser = null;
         let parsedTenant = null;
 

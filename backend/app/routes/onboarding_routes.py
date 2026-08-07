@@ -501,3 +501,97 @@ def verify_payment(
     )
     
     return verified_payment
+
+from fastapi import Form, UploadFile, File
+import os
+import shutil
+from typing import Optional
+from app.models.tenant import TenantVerificationStatus
+
+ALLOWED_DOC_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png"}
+MAX_DOC_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
+
+@router.post("/upload-company-doc")
+def upload_company_doc(
+    country: str = Form("India"),
+    company_name: str = Form(...),
+    company_email: str = Form(...),
+    company_phone: str = Form(...),
+    owner_name: str = Form(...),
+    registered_address: str = Form(...),
+    company_number: Optional[str] = Form(None),
+    verification_doc: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(auth_controller.get_current_user)
+):
+    """
+    Onboarding Stage: Submit company details & upload verification document.
+    Sets tenant status to PENDING for Super Admin review.
+    """
+    if not current_user.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User is not associated with any workspace tenant."
+        )
+
+    tenant = db.query(Tenant).filter(Tenant.id == current_user.tenant_id).first()
+    if not tenant:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tenant workspace not found."
+        )
+
+    # Validate File Extension
+    file_extension = os.path.splitext(verification_doc.filename)[1].lower()
+    if file_extension not in ALLOWED_DOC_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid file type '{file_extension}'. Allowed formats: PDF, JPG, JPEG, PNG."
+        )
+
+    # Validate File Size (read content)
+    doc_content = verification_doc.file.read()
+    if len(doc_content) > MAX_DOC_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File size exceeds maximum limit of 10 MB."
+        )
+
+    # Ensure uploads/verification_docs directory exists
+    docs_dir = os.path.join(os.getcwd(), "uploads", "verification_docs")
+    os.makedirs(docs_dir, exist_ok=True)
+
+    saved_filename = f"tenant_{tenant.id}_doc{file_extension}"
+    file_path = os.path.join(docs_dir, saved_filename)
+
+    with open(file_path, "wb") as buffer:
+        buffer.write(doc_content)
+
+    file_url = f"/uploads/verification_docs/{saved_filename}"
+
+    # Update tenant details
+    tenant.country = country
+    tenant.company_name = company_name
+    tenant.company_email = company_email
+    tenant.company_phone = company_phone
+    tenant.owner_name = owner_name
+    tenant.registered_address = registered_address
+    tenant.company_number = company_number
+    tenant.verification_doc_url = file_url
+    tenant.verification_status = TenantVerificationStatus.PENDING
+    tenant.rejection_reason = None
+    tenant.is_active = False # Remains false until Super Admin approves
+
+    db.commit()
+    db.refresh(tenant)
+
+    return {
+        "status": "success",
+        "message": "Company details and verification document submitted successfully. Your account is now pending Super Admin verification.",
+        "tenant_id": tenant.id,
+        "country": tenant.country,
+        "company_name": tenant.company_name,
+        "verification_status": tenant.verification_status,
+        "verification_doc_url": tenant.verification_doc_url
+    }
+

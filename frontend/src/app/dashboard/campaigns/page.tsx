@@ -15,7 +15,8 @@ import {
 } from 'lucide-react';
 
 export default function CampaignsPage() {
-  const { campaigns, addCampaign, updateCampaign, leads, updateLeadStatus } = useStore();
+  const { campaigns, addCampaign, updateCampaign, leads, updateLeadStatus, tenant } = useStore();
+  const isReadOnly = tenant?.verificationStatus !== 'APPROVED';
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [activeCallLead, setActiveCallLead] = useState<Lead | null>(null);
@@ -179,8 +180,20 @@ export default function CampaignsPage() {
         </h1>
         
         <button
-          onClick={() => setShowCreateModal(true)}
-          className="flex items-center text-xs font-bold px-4 py-2.5 bg-black hover:bg-[#1f2937] text-white rounded-lg transition-colors shadow-xs cursor-pointer font-outfit"
+          onClick={() => {
+            if (isReadOnly) {
+              alert('Action Disabled: Company verification is currently pending approval.');
+              return;
+            }
+            setShowCreateModal(true);
+          }}
+          disabled={isReadOnly}
+          title={isReadOnly ? 'Action Locked: Verification Pending' : 'Create New Campaign'}
+          className={`flex items-center text-xs font-bold px-4 py-2.5 rounded-lg transition-colors shadow-xs font-outfit ${
+            isReadOnly
+              ? 'bg-slate-300 text-slate-500 cursor-not-allowed opacity-60'
+              : 'bg-black hover:bg-[#1f2937] text-white cursor-pointer'
+          }`}
         >
           <Plus className="h-4 w-4 mr-1.5" />
           New Campaign

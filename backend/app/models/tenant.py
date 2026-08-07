@@ -32,6 +32,12 @@ class STTProvider(str, enum.Enum):
     DEEPGRAM = "DEEPGRAM"
     WHISPER = "WHISPER"
 
+class TenantVerificationStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    SUSPENDED = "SUSPENDED"
+
 class Tenant(Base):
     __tablename__ = "tenants"
 
@@ -46,11 +52,21 @@ class Tenant(Base):
     slug = Column(String(255), unique=True, nullable=False, index=True)
     company_email = Column(String(255), unique=True, nullable=False, index=True)
     company_phone = Column(String(20), unique=True, nullable=True, index=True)
+    country = Column(String(100), default="India")
+    company_number = Column(String(100), nullable=True)
+    registered_address = Column(Text, nullable=True)
+    owner_name = Column(String(255), nullable=True)
     website = Column(String(255))
     logo = Column(Text)
     address = Column(Text)
     timezone = Column(String(100), default="Asia/Kolkata")
     industry = Column(String(100), index=True)
+
+    # VERIFICATION & APPROVAL
+    verification_status = Column(Enum(TenantVerificationStatus), default=TenantVerificationStatus.PENDING, nullable=False)
+    verification_doc_url = Column(Text, nullable=True)
+    rejection_reason = Column(Text, nullable=True)
+    allowed_modules = Column(JSON, default=lambda: ["campaigns", "leads", "live_monitor", "analytics", "rag", "settings"])
 
     # AI CONFIGURATION
     ai_provider = Column(Enum(AIProvider), default=AIProvider.OPENAI)

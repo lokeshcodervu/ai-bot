@@ -435,3 +435,102 @@ def delete_knowledge_file(
     db.commit()
 
     return {"status": "success", "message": "Document and associated vectors successfully deleted."}
+
+# ---------------------------------------------------------
+# 4. SUPER ADMIN VERIFICATION & APPROVAL SYSTEM
+# ---------------------------------------------------------
+from pydantic import BaseModel
+from app.models.tenant import TenantVerificationStatus
+
+class ApproveTenantRequest(BaseModel):
+    allowed_modules: Optional[List[str]] = ["campaigns", "leads", "live_monitor", "analytics", "rag", "settings"]
+
+class RejectTenantRequest(BaseModel):
+    reason: str
+
+@router.get("/tenants/pending")
+def list_pending_tenants(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(auth_controller.require_role([UserRole.SUPER_ADMIN]))
+):
+    """Super Admin: Retrieve list of all tenants waiting for document review & approval."""
+    pending_tenants = db.query(Tenant).filter(
+        Tenant.verification_status == TenantVerificationStatus.PENDING,
+        Tenant.is_deleted == False
+    ).order_by(Tenant.created_at.desc()).all()
+
+    results = []
+    for t in pending_tenants:
+        results.append({
+            "id": t.id,
+            "company_name": t.company_name,
+            "country": t.country or "India",
+            "company_email": t.company_email,
+            "company_phone": t.company_phone,
+            "owner_name": t.owner_name,
+            "company_number": t.company_number,
+            "registered_address": t.registered_address,
+            "verification_status": t.verification_status,
+            "verification_doc_url": t.verification_doc_url,
+            "created_at": t.created_at
+        })
+    return results
+
+@router.post("/tenants/{tenant_id}/approve")
+def approve_tenant(
+    tenant_id: UUID,
+    payload: Optional[ApproveTenantRequest] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(auth_controller.require_role([UserRole.SUPER_ADMIN]))
+):
+    """Super Admin: Approve tenant workspace, activate account, and set status to APPROVED."""
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant workspace not found.")
+
+    allowed = payload.allowed_modules if payload and payload.allowed_modules else ["campaigns", "leads", "live_monitor", "analytics", "rag", "settings"]
+
+    tenant.verification_status = TenantVerificationStatus.APPROVED
+    tenant.is_active = True
+    tenant.is_verified = True
+    tenant.rejection_reason = None
+    tenant.allowed_modules = allowed
+
+    db.commit()
+    db.refresh(tenant)
+
+    return {
+        "status": "success",
+        "message": f"Tenant '{tenant.company_name}' has been approved and activated.",
+        "tenant_id": tenant.id,
+        "verification_status": tenant.verification_status,
+        "allowed_modules": tenant.allowed_modules
+    }
+
+@router.post("/tenants/{tenant_id}/reject")
+def reject_tenant(
+    tenant_id: UUID,
+    payload: RejectTenantRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(auth_controller.require_role([UserRole.SUPER_ADMIN]))
+):
+    """Super Admin: Reject tenant verification with reason."""
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant workspace not found.")
+
+    tenant.verification_status = TenantVerificationStatus.REJECTED
+    tenant.is_active = False
+    tenant.rejection_reason = payload.reason
+
+    db.commit()
+    db.refresh(tenant)
+
+    return {
+        "status": "success",
+        "message": f"Tenant '{tenant.company_name}' verification has been rejected.",
+        "tenant_id": tenant.id,
+        "verification_status": tenant.verification_status,
+        "rejection_reason": tenant.rejection_reason
+    }
+

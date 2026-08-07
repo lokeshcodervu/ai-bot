@@ -49,6 +49,65 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   // Coming soon modal state
   const [comingSoonFeature, setComingSoonFeature] = useState<string | null>(null);
 
+  // Re-upload Modal State for Rejected Verification
+  const [showReuploadModal, setShowReuploadModal] = useState(false);
+  const [reuploadCountry, setReuploadCountry] = useState<'India' | 'United Kingdom'>('India');
+  const [reuploadDoc, setReuploadDoc] = useState<File | null>(null);
+  const [reuploadAddress, setReuploadAddress] = useState('');
+  const [reuploadCompanyNumber, setReuploadCompanyNumber] = useState('');
+  const [isReuploading, setIsReuploading] = useState(false);
+
+  const handleReuploadSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reuploadDoc) {
+      alert('Please select a company verification document.');
+      return;
+    }
+    setIsReuploading(true);
+    try {
+      const activeToken = token || (typeof window !== 'undefined' ? localStorage.getItem('token') : '');
+      const formData = new FormData();
+      formData.append('country', reuploadCountry);
+      formData.append('company_name', tenant?.companyName || 'Company');
+      formData.append('company_email', tenant?.companyEmail || user?.email || '');
+      formData.append('company_phone', tenant?.companyPhone || '');
+      formData.append('owner_name', tenant?.ownerName || user?.full_name || '');
+      formData.append('registered_address', reuploadAddress.trim() || tenant?.registeredAddress || 'Office Address');
+      if (reuploadCountry === 'United Kingdom') {
+        formData.append('company_number', reuploadCompanyNumber.trim() || tenant?.companyNumber || '');
+      }
+      formData.append('verification_doc', reuploadDoc);
+
+      const res = await fetch(`${API_BASE}/onboarding/upload-company-doc`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${activeToken}`,
+          'ngrok-skip-browser-warning': 'true',
+        },
+        body: formData,
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        useStore.getState().setTenant({
+          verificationStatus: 'PENDING',
+          verificationDocUrl: data.verification_doc_url,
+          rejectionReason: undefined,
+        });
+        alert('Verification document re-uploaded successfully! Status updated to PENDING.');
+        setShowReuploadModal(false);
+      } else {
+        const err = await res.json();
+        alert(`Re-upload failed: ${err.detail || 'Error uploading file'}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Re-upload failed. Please check network connection.');
+    } finally {
+      setIsReuploading(false);
+    }
+  };
+
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -180,11 +239,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             <button
               key={item.name}
               onClick={() => handleNavClick(item)}
-              className={`w-full flex items-center px-4 py-3 rounded-lg text-sm font-semibold transition-all duration-150 ${
-                isActive
+              className={`w-full flex items-center px-4 py-3 rounded-lg text-sm font-semibold transition-all duration-150 ${isActive
                   ? 'bg-[#111111] text-white shadow-sm'
                   : 'text-[#475569] hover:text-black hover:bg-[#f1f5f9]'
-              }`}
+                }`}
             >
               <Icon className={`h-5 w-5 mr-3.5 ${isActive ? 'text-white' : 'text-[#94a3b8]'}`} />
               {item.name}
@@ -277,6 +335,68 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             </button>
           </div>
         </header>
+
+        {/* VERIFICATION STATUS BANNERS */}
+        {tenant?.verificationStatus === 'PENDING' ? (
+          <div className="bg-amber-500 text-slate-950 px-6 py-3 border-b border-amber-600 flex items-center justify-between shadow-xs">
+            <div className="flex items-center space-x-3">
+              <span className="text-xl">🔒</span>
+              <div>
+                <p className="text-sm font-bold tracking-tight">
+                  Verification Pending
+                </p>
+                <p className="text-xs text-slate-900 font-medium">
+                  Your company documents are currently under review by the Super Admin. Full access will be available once your account is approved.
+                </p>
+              </div>
+            </div>
+            <span className="px-3 py-1 bg-slate-950 text-amber-400 rounded-full text-xs font-bold uppercase tracking-wider">
+              Read-Only
+            </span>
+          </div>
+        ) : tenant?.verificationStatus === 'REJECTED' ? (
+          <div className="bg-red-600 text-white px-6 py-3 border-b border-red-700 flex items-center justify-between shadow-xs">
+            <div className="flex items-center space-x-3">
+              <span className="text-xl">⚠️</span>
+              <div>
+                <p className="text-sm font-bold tracking-tight">
+                  Company Verification Rejected
+                </p>
+                <p className="text-xs text-red-100 font-medium">
+                  Your submitted company documents could not be verified. {tenant.rejectionReason ? `Reason: ${tenant.rejectionReason}` : ''}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                setReuploadCountry(tenant.country || 'India');
+                setReuploadAddress(tenant.registeredAddress || '');
+                setReuploadCompanyNumber(tenant.companyNumber || '');
+                setShowReuploadModal(true);
+              }}
+              className="px-3.5 py-1.5 bg-white hover:bg-slate-100 text-red-700 rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer"
+            >
+              Re-upload Documents
+            </button>
+          </div>
+        ) : tenant?.verificationStatus === 'SUSPENDED' ? (
+          <div className="bg-slate-900 text-white px-6 py-3 border-b border-slate-950 flex items-center justify-between shadow-xs">
+            <div className="flex items-center space-x-3">
+              <span className="text-xl">🚫</span>
+              <div>
+                <p className="text-sm font-bold tracking-tight">
+                  Account Suspended
+                </p>
+                <p className="text-xs text-slate-300 font-medium">
+                  Your account has been suspended by administration. Please contact support.
+                </p>
+              </div>
+            </div>
+            <span className="px-3 py-1 bg-red-600 text-white rounded-full text-xs font-bold uppercase tracking-wider">
+              Suspended
+            </span>
+          </div>
+        ) : null}
 
         {/* VIEW SCROLLER */}
         <main className="flex-1 overflow-y-auto no-scrollbar bg-[#f8fafc] p-4 lg:p-4">
@@ -384,6 +504,105 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             >
               Got it
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* RE-UPLOAD DOCUMENTS MODAL DIALOG */}
+      {showReuploadModal && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white max-w-md w-full rounded-2xl shadow-xl border border-slate-200 overflow-hidden text-xs">
+            <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+              <div className="flex items-center space-x-2">
+                <ShieldCheck className="h-5 w-5 text-red-600" />
+                <span className="font-bold text-slate-900 text-sm">Re-upload Verification Documents</span>
+              </div>
+              <button onClick={() => setShowReuploadModal(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleReuploadSubmit} className="p-6 space-y-4">
+              {tenant?.rejectionReason && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-800 text-xs">
+                  <p className="font-bold">Rejection Reason:</p>
+                  <p>{tenant.rejectionReason}</p>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Company Country *</label>
+                <select
+                  value={reuploadCountry}
+                  onChange={(e) => setReuploadCountry(e.target.value as 'India' | 'United Kingdom')}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-black"
+                >
+                  <option value="India">India</option>
+                  <option value="United Kingdom">United Kingdom</option>
+                </select>
+              </div>
+
+              {reuploadCountry === 'United Kingdom' && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Company Number *</label>
+                  <input
+                    type="text"
+                    required
+                    value={reuploadCompanyNumber}
+                    onChange={(e) => setReuploadCompanyNumber(e.target.value)}
+                    placeholder="Enter Companies House Company Number"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-black"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Registered Office Address *</label>
+                <textarea
+                  required
+                  value={reuploadAddress}
+                  onChange={(e) => setReuploadAddress(e.target.value)}
+                  placeholder="Enter complete registered office address"
+                  rows={2}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-black resize-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Upload Verification Document *
+                </label>
+                <p className="text-[11px] text-slate-500 mb-1">
+                  {reuploadCountry === 'India'
+                    ? 'GST Registration Certificate OR Certificate of Incorporation'
+                    : 'Companies House Certificate of Incorporation'}
+                </p>
+                <input
+                  type="file"
+                  required
+                  accept=".pdf,.jpg,.jpeg,.png"
+                  onChange={(e) => setReuploadDoc(e.target.files?.[0] || null)}
+                  className="w-full text-xs text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-slate-800 file:text-white hover:file:bg-slate-900 cursor-pointer"
+                />
+              </div>
+
+              <div className="pt-2 flex justify-end space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setShowReuploadModal(false)}
+                  className="px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isReuploading || !reuploadDoc}
+                  className="px-4 py-2 bg-[#111111] hover:bg-black text-white rounded-lg text-xs font-bold transition-all shadow-sm disabled:opacity-50"
+                >
+                  {isReuploading ? 'Resubmitting...' : 'Submit for Verification'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

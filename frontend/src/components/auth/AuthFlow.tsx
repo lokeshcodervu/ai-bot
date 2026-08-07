@@ -22,7 +22,7 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
 
   // View state: 'login' | 'signup' | 'reset-password' | 'reset-success'
   const [view, setView] = useState<'login' | 'signup' | 'reset-password' | 'reset-success'>(initialView);
-  
+
   // Step in signup: 1 (Form), 2 (Industry), 3 (Subscription Plan)
   const [step, setStep] = useState<number>(1);
   const [showVerifyModal, setShowVerifyModal] = useState<boolean>(false);
@@ -37,6 +37,17 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
   const [password, setPassword] = useState('');
   const [agreeTerms, setAgreeTerms] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+
+  // Company Verification Form State
+  const [country, setCountry] = useState<'India' | 'United Kingdom'>('India');
+  const [companyName, setCompanyName] = useState('');
+  const [companyEmail, setCompanyEmail] = useState('');
+  const [companyPhone, setCompanyPhone] = useState('');
+  const [ownerName, setOwnerName] = useState('');
+  const [registeredAddress, setRegisteredAddress] = useState('');
+  const [companyNumber, setCompanyNumber] = useState('');
+  const [verificationDoc, setVerificationDoc] = useState<File | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
 
   // OTP State (6 digits - default 111111)
   const [otpDigits, setOtpDigits] = useState<string[]>(['1', '1', '1', '1', '1', '1']);
@@ -208,6 +219,99 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
     } catch (err) {
       console.error(err);
       alert('Verification request failed.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // File Validation Helper (Allowed: .pdf, .jpg, .jpeg, .png; Max: 10MB)
+  const handleFileChange = (file: File | null) => {
+    setFileError(null);
+    if (!file) {
+      setVerificationDoc(null);
+      return;
+    }
+    const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
+    if (!['.pdf', '.jpg', '.jpeg', '.png'].includes(ext)) {
+      setFileError('Invalid file type. Allowed formats: PDF, JPG, JPEG, PNG.');
+      setVerificationDoc(null);
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setFileError('File size exceeds maximum allowed limit of 10 MB.');
+      setVerificationDoc(null);
+      return;
+    }
+    setVerificationDoc(file);
+  };
+
+  // Handle Step 2 Company Verification Submission
+  const handleCompanyDocSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!companyName.trim()) {
+      alert('Please enter your Company Name.');
+      return;
+    }
+    if (!registeredAddress.trim()) {
+      alert('Please enter your Registered Office Address.');
+      return;
+    }
+    if (country === 'United Kingdom' && !companyNumber.trim()) {
+      alert('Please enter your Companies House Company Number.');
+      return;
+    }
+    if (!verificationDoc) {
+      alert('Please upload the required company verification document.');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const activeToken = verifiedToken || (typeof window !== 'undefined' ? localStorage.getItem('token') : '');
+      const formData = new FormData();
+      formData.append('country', country);
+      formData.append('company_name', companyName.trim());
+      formData.append('company_email', companyEmail.trim() || email.trim());
+      formData.append('company_phone', companyPhone.trim());
+      formData.append('owner_name', ownerName.trim() || fullName.trim());
+      formData.append('registered_address', registeredAddress.trim());
+      if (country === 'United Kingdom') {
+        formData.append('company_number', companyNumber.trim());
+      }
+      formData.append('verification_doc', verificationDoc);
+
+      const res = await fetch(`${API_BASE}/onboarding/upload-company-doc`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${activeToken}`,
+          'ngrok-skip-browser-warning': 'true',
+        },
+        body: formData,
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setTenant({
+          id: data.tenant_id,
+          companyName: companyName,
+          country: country,
+          companyEmail: companyEmail || email,
+          companyPhone: companyPhone,
+          companyNumber: companyNumber,
+          registeredAddress: registeredAddress,
+          ownerName: ownerName || fullName,
+          verificationStatus: 'PENDING',
+          verificationDocUrl: data.verification_doc_url,
+        });
+        if (onClose) onClose();
+        router.push('/dashboard');
+      } else {
+        const err = await res.json();
+        alert(`Upload failed: ${err.detail || 'Could not upload company document'}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Document submission failed. Please check network connection.');
     } finally {
       setIsLoading(false);
     }
@@ -500,52 +604,187 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
                 </div>
               )}
 
-              {/* STEP 2: What's your industry? */}
+              {/* STEP 2: Company Verification Form */}
               {step === 2 && (
-                <div className="space-y-8 max-w-lg">
-                  <h1
-                    className="text-white mb-4"
-                    style={{
-                      fontFamily: "'Sora', sans-serif",
-                      fontWeight: 400,
-                      fontSize: '36px',
-                      lineHeight: '44px',
-                      letterSpacing: '-0.02em',
-                    }}
-                  >
-                    What’s your industry?
-                  </h1>
+                <form onSubmit={handleCompanyDocSubmit} className="space-y-4 max-w-lg">
+                  <div>
+                    <h1
+                      className="text-white mb-1"
+                      style={{
+                        fontFamily: "'Sora', sans-serif",
+                        fontWeight: 400,
+                        fontSize: '32px',
+                        lineHeight: '40px',
+                        letterSpacing: '-0.02em',
+                      }}
+                    >
+                      Company Verification
+                    </h1>
+                    <p className="text-xs text-zinc-400">
+                      Provide company details and verification documents for account review.
+                    </p>
+                  </div>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    {industries.map((ind) => {
-                      const isSelected = selectedIndustry === ind;
-                      return (
-                        <button
-                          key={ind}
-                          type="button"
-                          onClick={() => setSelectedIndustry(ind)}
-                          className={`py-3.5 px-4 rounded-xl text-xs md:text-sm font-medium border text-center transition-all ${isSelected
-                              ? 'bg-[#1C1C1E] border-zinc-400 text-white shadow-lg'
-                              : 'bg-[#121214]/80 backdrop-blur-md border-[#26262A] text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
-                            }`}
-                        >
-                          {ind}
-                        </button>
-                      );
-                    })}
+                  <div className="space-y-3">
+                    {/* Country Selection */}
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-300 mb-1">
+                        Company Country *
+                      </label>
+                      <select
+                        value={country}
+                        onChange={(e) => {
+                          setCountry(e.target.value as 'India' | 'United Kingdom');
+                          setVerificationDoc(null);
+                          setFileError(null);
+                        }}
+                        className="w-full px-3.5 py-2.5 bg-[#121214] border border-[#26262A] rounded-xl text-white text-sm focus:outline-none focus:border-zinc-500 cursor-pointer"
+                      >
+                        <option value="India">India</option>
+                        <option value="United Kingdom">United Kingdom</option>
+                      </select>
+                    </div>
+
+                    {/* Company Name */}
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-300 mb-1">
+                        Company Name *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={companyName}
+                        onChange={(e) => setCompanyName(e.target.value)}
+                        placeholder={country === 'United Kingdom' ? "e.g. CoderVu Ltd" : "e.g. CoderVu Technologies Pvt Ltd"}
+                        className="w-full px-3.5 py-2.5 bg-[#121214] border border-[#26262A] rounded-xl text-white text-sm focus:outline-none focus:border-zinc-500"
+                      />
+                    </div>
+
+                    {/* Email & Phone */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-zinc-300 mb-1">
+                          Company Email *
+                        </label>
+                        <input
+                          type="email"
+                          required
+                          value={companyEmail || email}
+                          onChange={(e) => setCompanyEmail(e.target.value)}
+                          placeholder="company@codervu.com"
+                          className="w-full px-3.5 py-2.5 bg-[#121214] border border-[#26262A] rounded-xl text-white text-sm focus:outline-none focus:border-zinc-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-zinc-300 mb-1">
+                          Phone Number *
+                        </label>
+                        <input
+                          type="tel"
+                          required
+                          value={companyPhone}
+                          onChange={(e) => setCompanyPhone(e.target.value)}
+                          placeholder={country === 'United Kingdom' ? "+44 20 7946 0912" : "+91 98765 43210"}
+                          className="w-full px-3.5 py-2.5 bg-[#121214] border border-[#26262A] rounded-xl text-white text-sm focus:outline-none focus:border-zinc-500"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Owner Name */}
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-300 mb-1">
+                        Owner Name *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={ownerName || fullName}
+                        onChange={(e) => setOwnerName(e.target.value)}
+                        placeholder="e.g. Rahul Sharma"
+                        className="w-full px-3.5 py-2.5 bg-[#121214] border border-[#26262A] rounded-xl text-white text-sm focus:outline-none focus:border-zinc-500"
+                      />
+                    </div>
+
+                    {/* UK Specific Company Number */}
+                    {country === 'United Kingdom' && (
+                      <div>
+                        <label className="block text-xs font-medium text-zinc-300 mb-1">
+                          Company Number *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={companyNumber}
+                          onChange={(e) => setCompanyNumber(e.target.value)}
+                          placeholder="Enter Company Number (e.g. 12345678)"
+                          className="w-full px-3.5 py-2.5 bg-[#121214] border border-[#26262A] rounded-xl text-white text-sm focus:outline-none focus:border-zinc-500"
+                        />
+                      </div>
+                    )}
+
+                    {/* Registered Office Address */}
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-300 mb-1">
+                        Registered Office Address *
+                      </label>
+                      <textarea
+                        required
+                        value={registeredAddress}
+                        onChange={(e) => setRegisteredAddress(e.target.value)}
+                        placeholder="Enter complete registered office address"
+                        rows={2}
+                        className="w-full px-3.5 py-2 bg-[#121214] border border-[#26262A] rounded-xl text-white text-sm focus:outline-none focus:border-zinc-500 resize-none"
+                      />
+                    </div>
+
+                    {/* Document Upload Section */}
+                    <div className="p-3.5 bg-[#121214]/80 border border-[#26262A] rounded-xl space-y-2">
+                      <label className="block text-xs font-semibold text-white">
+                        Company Verification Documents *
+                      </label>
+
+                      {country === 'India' ? (
+                        <p className="text-[11px] text-zinc-400">
+                          Required: <strong>GST Registration Certificate</strong> OR <strong>Certificate of Incorporation / Company Registration Certificate</strong>
+                        </p>
+                      ) : (
+                        <p className="text-[11px] text-zinc-400">
+                          Required: <strong>Companies House Certificate of Incorporation</strong>
+                        </p>
+                      )}
+
+                      <input
+                        type="file"
+                        required
+                        accept=".pdf,.jpg,.jpeg,.png"
+                        onChange={(e) => handleFileChange(e.target.files?.[0] || null)}
+                        className="w-full text-xs text-zinc-400 file:mr-3 file:py-2 file:px-3.5 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-zinc-800 file:text-zinc-200 hover:file:bg-zinc-700 cursor-pointer"
+                      />
+
+                      {fileError && (
+                        <p className="text-[11px] text-red-400 mt-1 font-medium">
+                          ⚠️ {fileError}
+                        </p>
+                      )}
+
+                      {verificationDoc && !fileError && (
+                        <p className="text-[11px] text-emerald-400 mt-1 font-medium">
+                          ✓ File Selected: {verificationDoc.name} ({Math.round(verificationDoc.size / 1024)} KB)
+                        </p>
+                      )}
+                    </div>
                   </div>
 
                   <div>
                     <button
-                      type="button"
-                      onClick={handleIndustryContinue}
-                      disabled={isLoading}
-                      className="w-full py-3.5 bg-[#1C1C1E] hover:bg-[#28282C] text-white font-medium text-sm rounded-xl transition-all shadow-md disabled:opacity-50 border border-zinc-700/50"
+                      type="submit"
+                      disabled={isLoading || !!fileError || !verificationDoc}
+                      className="w-full py-3.5 bg-white hover:bg-zinc-200 text-black font-semibold text-sm rounded-xl transition-all shadow-md disabled:opacity-50 mt-2"
                     >
-                      {isLoading ? 'Saving...' : 'Continue'}
+                      {isLoading ? 'Submitting Verification...' : 'Submit for Verification'}
                     </button>
                   </div>
-                </div>
+                </form>
               )}
 
               {/* STEP 3: Select a plan */}
@@ -569,8 +808,8 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
                     <div
                       onClick={() => setSelectedPlan('basic')}
                       className={`cursor-pointer p-5 rounded-2xl border transition-all ${selectedPlan === 'basic'
-                          ? 'bg-[#141415] border-zinc-400 text-white ring-1 ring-zinc-400'
-                          : 'bg-[#121214]/70 backdrop-blur-md border-[#26262A] text-zinc-400 hover:border-zinc-700'
+                        ? 'bg-[#141415] border-zinc-400 text-white ring-1 ring-zinc-400'
+                        : 'bg-[#121214]/70 backdrop-blur-md border-[#26262A] text-zinc-400 hover:border-zinc-700'
                         }`}
                     >
                       <h3 className="text-sm font-medium text-white mb-1">Basic</h3>
@@ -597,8 +836,8 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
                     <div
                       onClick={() => setSelectedPlan('pro')}
                       className={`cursor-pointer p-5 rounded-2xl border transition-all ${selectedPlan === 'pro'
-                          ? 'bg-[#141415] border-zinc-400 text-white ring-1 ring-zinc-400'
-                          : 'bg-[#121214]/70 backdrop-blur-md border-[#26262A] text-zinc-400 hover:border-zinc-700'
+                        ? 'bg-[#141415] border-zinc-400 text-white ring-1 ring-zinc-400'
+                        : 'bg-[#121214]/70 backdrop-blur-md border-[#26262A] text-zinc-400 hover:border-zinc-700'
                         }`}
                     >
                       <h3 className="text-sm font-medium text-white mb-1">Pro</h3>
@@ -630,8 +869,8 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
                   <div
                     onClick={() => setSelectedPlan('enterprise')}
                     className={`cursor-pointer p-5 rounded-2xl border transition-all ${selectedPlan === 'enterprise'
-                        ? 'bg-[#141415] border-zinc-400 text-white ring-1 ring-zinc-400'
-                        : 'bg-[#121214]/70 backdrop-blur-md border-[#26262A] text-zinc-400 hover:border-zinc-700'
+                      ? 'bg-[#141415] border-zinc-400 text-white ring-1 ring-zinc-400'
+                      : 'bg-[#121214]/70 backdrop-blur-md border-[#26262A] text-zinc-400 hover:border-zinc-700'
                       }`}
                   >
                     <div className="flex items-center justify-between mb-4">
@@ -958,7 +1197,7 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
       {showPaymentModal && (
         <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-[#0D0D0F] border border-[#26262A] rounded-3xl p-6 md:p-8 max-w-md w-full space-y-6 shadow-2xl font-sans relative text-left">
-            
+
             {/* Modal Header & Close */}
             <div className="flex items-center justify-between pb-2 border-b border-[#26262A]">
               <div>
@@ -1015,11 +1254,10 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
                   setPaymentMethod('card');
                   setPaymentError(null);
                 }}
-                className={`py-2.5 rounded-lg flex items-center justify-center space-x-2 transition-all ${
-                  paymentMethod === 'card'
-                    ? 'bg-[#1C1C1E] text-white shadow-md border border-zinc-700/60'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
+                className={`py-2.5 rounded-lg flex items-center justify-center space-x-2 transition-all ${paymentMethod === 'card'
+                  ? 'bg-[#1C1C1E] text-white shadow-md border border-zinc-700/60'
+                  : 'text-zinc-400 hover:text-white'
+                  }`}
               >
                 <CreditCard className="w-4 h-4" />
                 <span>Card Payment</span>
@@ -1031,11 +1269,10 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
                   setPaymentMethod('upi');
                   setPaymentError(null);
                 }}
-                className={`py-2.5 rounded-lg flex items-center justify-center space-x-2 transition-all ${
-                  paymentMethod === 'upi'
-                    ? 'bg-[#1C1C1E] text-white shadow-md border border-zinc-700/60'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
+                className={`py-2.5 rounded-lg flex items-center justify-center space-x-2 transition-all ${paymentMethod === 'upi'
+                  ? 'bg-[#1C1C1E] text-white shadow-md border border-zinc-700/60'
+                  : 'text-zinc-400 hover:text-white'
+                  }`}
               >
                 <Smartphone className="w-4 h-4" />
                 <span>UPI Payment</span>

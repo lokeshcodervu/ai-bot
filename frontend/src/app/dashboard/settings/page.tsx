@@ -38,7 +38,8 @@ const VOICE_OPTIONS: VoiceCard[] = [
 ];
 
 export default function SettingsPage() {
-  const { token } = useStore();
+  const { token, tenant } = useStore();
+  const isReadOnly = tenant?.verificationStatus !== 'APPROVED';
 
   // Active tab selection matching Figma tabs
   const [activeTab, setActiveTab] = useState<'profile' | 'voice' | 'kb' | 'prompt' | 'tools' | 'test'>('profile');
@@ -173,6 +174,10 @@ export default function SettingsPage() {
   // Company Profile saver
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isReadOnly) {
+      alert('Action Disabled: Company verification is currently pending approval.');
+      return;
+    }
     if (!token) return;
     setIsSavingProfile(true);
     try {
