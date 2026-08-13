@@ -16,6 +16,7 @@ from app.models.blacklist import BlacklistedNumber
 from app.models.call_log import CallLog
 from app.models.prompt_version import PromptVersion
 from app.models.tool_schema import ToolSchema
+from app.models.audit_log import AuditLog
 
 __all__ = [
     "User",
@@ -44,5 +45,6 @@ __all__ = [
     "CallLog",
     "PromptVersion",
     "ToolSchema",
+    "AuditLog",
 ]
 

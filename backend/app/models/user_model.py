@@ -149,6 +149,7 @@ class User(Base):
     tenant = relationship(
         "Tenant",
         back_populates="users",
+        foreign_keys=[tenant_id],
         lazy="selectin"
     )
 

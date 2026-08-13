@@ -38,8 +38,9 @@ const VOICE_OPTIONS: VoiceCard[] = [
 ];
 
 export default function SettingsPage() {
-  const { token, tenant } = useStore();
-  const isReadOnly = tenant?.verificationStatus !== 'APPROVED';
+  const { user, token, tenant } = useStore();
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'Super Admin';
+  const isReadOnly = !isSuperAdmin && tenant?.verificationStatus !== 'APPROVED';
 
   // Active tab selection matching Figma tabs
   const [activeTab, setActiveTab] = useState<'profile' | 'voice' | 'kb' | 'prompt' | 'tools' | 'test'>('profile');

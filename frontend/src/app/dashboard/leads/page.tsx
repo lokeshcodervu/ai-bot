@@ -31,8 +31,9 @@ interface LeadWithSource extends Lead {
 }
 
 export default function LeadsCrmPage() {
-  const { token, tenant } = useStore();
-  const isReadOnly = tenant?.verificationStatus !== 'APPROVED';
+  const { user, token, tenant } = useStore();
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'Super Admin';
+  const isReadOnly = !isSuperAdmin && tenant?.verificationStatus !== 'APPROVED';
 
   // Local state for leads
   const [leadsList, setLeadsList] = useState<LeadWithSource[]>([]);

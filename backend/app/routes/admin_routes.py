@@ -440,97 +440,367 @@ def delete_knowledge_file(
 # 4. SUPER ADMIN VERIFICATION & APPROVAL SYSTEM
 # ---------------------------------------------------------
 from pydantic import BaseModel
+from datetime import datetime, timezone
 from app.models.tenant import TenantVerificationStatus
+from app.models.document import Document
+from app.schemas.company_verification_schema import (
+    CompanyVerificationDetailOut, DocumentMetadataOut, SuperAdminRejectRequest, SuperAdminApproveRequest
+)
+from app.services.company_verification_service import (
+    validate_state_transition, create_audit_entry, invalidate_redis_verification_cache
+)
 
-class ApproveTenantRequest(BaseModel):
-    allowed_modules: Optional[List[str]] = ["campaigns", "leads", "live_monitor", "analytics", "rag", "settings"]
-
-class RejectTenantRequest(BaseModel):
-    reason: str
-
-@router.get("/tenants/pending")
-def list_pending_tenants(
+@router.get("/company-verifications")
+def list_company_verifications(
+    status_filter: Optional[str] = "PENDING",
+    page: int = 1,
+    limit: int = 20,
     db: Session = Depends(get_db),
     current_user: User = Depends(auth_controller.require_role([UserRole.SUPER_ADMIN]))
 ):
-    """Super Admin: Retrieve list of all tenants waiting for document review & approval."""
-    pending_tenants = db.query(Tenant).filter(
-        Tenant.verification_status == TenantVerificationStatus.PENDING,
-        Tenant.is_deleted == False
-    ).order_by(Tenant.created_at.desc()).all()
+    """
+    Super Admin: List company verifications filtered by status (PENDING, APPROVED, REJECTED, SUSPENDED, ALL).
+    Supports pagination.
+    """
+    query = db.query(Tenant).filter(Tenant.is_deleted == False)
+
+    if status_filter and status_filter.upper() != "ALL":
+        try:
+            status_enum = TenantVerificationStatus(status_filter.upper())
+            query = query.filter(Tenant.verification_status == status_enum)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid status_filter '{status_filter}'. Allowed: PENDING, APPROVED, REJECTED, SUSPENDED, ALL.")
+
+    total = query.count()
+    offset = (max(1, page) - 1) * limit
+    tenants = query.order_by(Tenant.created_at.desc()).offset(offset).limit(limit).all()
 
     results = []
-    for t in pending_tenants:
+    for t in tenants:
+        docs = db.query(Document).filter(Document.tenant_id == t.id).all()
+        doc_metas = [
+            {
+                "document_id": d.id,
+                "document_type": d.document_type or "VERIFICATION_DOC",
+                "file_name": d.file_name,
+                "file_url": d.file_url,
+                "uploaded_at": d.created_at
+            }
+            for d in docs
+        ]
+
+        ver_stat = t.verification_status.value if hasattr(t.verification_status, "value") else str(t.verification_status)
         results.append({
-            "id": t.id,
+            "company_id": t.id,
+            "tenant_id": t.id,
             "company_name": t.company_name,
-            "country": t.country or "India",
+            "country": t.country or "INDIA",
             "company_email": t.company_email,
             "company_phone": t.company_phone,
+            "phone_number": t.company_phone,
             "owner_name": t.owner_name,
+            "registered_office_address": t.registered_address,
             "company_number": t.company_number,
-            "registered_address": t.registered_address,
-            "verification_status": t.verification_status,
+            "verification_status": ver_stat,
             "verification_doc_url": t.verification_doc_url,
-            "created_at": t.created_at
+            "submitted_at": t.submitted_at,
+            "verified_at": t.verified_at,
+            "verified_by": t.verified_by,
+            "rejection_reason": t.rejection_reason,
+            "created_at": t.created_at,
+            "documents": doc_metas
         })
-    return results
 
-@router.post("/tenants/{tenant_id}/approve")
-def approve_tenant(
-    tenant_id: UUID,
-    payload: Optional[ApproveTenantRequest] = None,
+    return {
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "items": results
+    }
+
+@router.get("/company-verifications/{company_id}", response_model=CompanyVerificationDetailOut)
+def get_company_verification_detail(
+    company_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(auth_controller.require_role([UserRole.SUPER_ADMIN]))
 ):
-    """Super Admin: Approve tenant workspace, activate account, and set status to APPROVED."""
-    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    """Super Admin: Get detailed verification information and uploaded document metadata for a company."""
+    tenant = db.query(Tenant).filter(Tenant.id == company_id, Tenant.is_deleted == False).first()
     if not tenant:
-        raise HTTPException(status_code=404, detail="Tenant workspace not found.")
+        raise HTTPException(status_code=404, detail="Company / Tenant workspace not found.")
+
+    docs = db.query(Document).filter(Document.tenant_id == tenant.id).all()
+    doc_metas = [
+        DocumentMetadataOut(
+            document_id=d.id,
+            tenant_id=d.tenant_id,
+            document_type=d.document_type or "VERIFICATION_DOC",
+            file_name=d.file_name,
+            file_url=d.file_url,
+            mime_type=d.mime_type,
+            file_size=d.file_size,
+            uploaded_by=d.uploaded_by,
+            uploaded_at=d.created_at,
+            verification_status=d.verification_status or "PENDING"
+        )
+        for d in docs
+    ]
+
+    ver_stat = tenant.verification_status.value if hasattr(tenant.verification_status, "value") else str(tenant.verification_status)
+
+    return CompanyVerificationDetailOut(
+        company_id=tenant.id,
+        company_name=tenant.company_name,
+        company_email=tenant.company_email,
+        phone_number=tenant.company_phone,
+        country=tenant.country,
+        owner_name=tenant.owner_name,
+        registered_office_address=tenant.registered_address,
+        company_number=tenant.company_number,
+        verification_status=ver_stat,
+        submitted_at=tenant.submitted_at,
+        verified_at=tenant.verified_at,
+        verified_by=tenant.verified_by,
+        rejection_reason=tenant.rejection_reason,
+        documents=doc_metas
+    )
+
+@router.post("/company-verifications/{company_id}/approve")
+def approve_company_verification(
+    company_id: UUID,
+    payload: Optional[SuperAdminApproveRequest] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(auth_controller.require_role([UserRole.SUPER_ADMIN]))
+):
+    """
+    Super Admin: Approve company verification (PENDING -> APPROVED).
+    Activates tenant account and sets verified_at and verified_by timestamps.
+    """
+    tenant = db.query(Tenant).filter(Tenant.id == company_id).first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Company / Tenant workspace not found.")
+
+    # Enforce state transition
+    validate_state_transition(tenant.verification_status, TenantVerificationStatus.APPROVED)
+
+    prev_status = tenant.verification_status.value if hasattr(tenant.verification_status, "value") else str(tenant.verification_status)
+    now_utc = datetime.now(timezone.utc)
 
     allowed = payload.allowed_modules if payload and payload.allowed_modules else ["campaigns", "leads", "live_monitor", "analytics", "rag", "settings"]
 
     tenant.verification_status = TenantVerificationStatus.APPROVED
     tenant.is_active = True
     tenant.is_verified = True
+    tenant.verified_at = now_utc
+    tenant.verified_by = current_user.id
     tenant.rejection_reason = None
     tenant.allowed_modules = allowed
+
+    # Update document status to APPROVED
+    db.query(Document).filter(Document.tenant_id == tenant.id).update({"verification_status": "APPROVED"})
+
+    # Audit log
+    create_audit_entry(
+        db=db,
+        tenant_id=tenant.id,
+        action="APPROVED",
+        performed_by=current_user.id,
+        previous_status=prev_status,
+        new_status=TenantVerificationStatus.APPROVED.value,
+        rejection_reason=None
+    )
 
     db.commit()
     db.refresh(tenant)
 
+    # Invalidate Redis cache
+    invalidate_redis_verification_cache(tenant.id)
+
     return {
         "status": "success",
-        "message": f"Tenant '{tenant.company_name}' has been approved and activated.",
-        "tenant_id": tenant.id,
-        "verification_status": tenant.verification_status,
-        "allowed_modules": tenant.allowed_modules
+        "message": f"Company '{tenant.company_name}' has been approved and granted full tenant permissions.",
+        "company_id": tenant.id,
+        "verification_status": tenant.verification_status.value,
+        "verified_at": tenant.verified_at,
+        "verified_by": tenant.verified_by
     }
+
+@router.post("/company-verifications/{company_id}/reject")
+def reject_company_verification(
+    company_id: UUID,
+    payload: SuperAdminRejectRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(auth_controller.require_role([UserRole.SUPER_ADMIN]))
+):
+    """
+    Super Admin: Reject company verification (PENDING -> REJECTED).
+    Requires a non-empty rejection reason.
+    """
+    if not payload.reason or not payload.reason.strip():
+        raise HTTPException(status_code=400, detail="Rejection reason ('reason') is required.")
+
+    tenant = db.query(Tenant).filter(Tenant.id == company_id).first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Company / Tenant workspace not found.")
+
+    # Enforce state transition
+    validate_state_transition(tenant.verification_status, TenantVerificationStatus.REJECTED)
+
+    prev_status = tenant.verification_status.value if hasattr(tenant.verification_status, "value") else str(tenant.verification_status)
+
+    tenant.verification_status = TenantVerificationStatus.REJECTED
+    tenant.is_active = False
+    tenant.rejection_reason = payload.reason.strip()
+
+    # Update document status to REJECTED
+    db.query(Document).filter(Document.tenant_id == tenant.id).update({"verification_status": "REJECTED"})
+
+    # Audit log
+    create_audit_entry(
+        db=db,
+        tenant_id=tenant.id,
+        action="REJECTED",
+        performed_by=current_user.id,
+        previous_status=prev_status,
+        new_status=TenantVerificationStatus.REJECTED.value,
+        rejection_reason=payload.reason.strip()
+    )
+
+    db.commit()
+    db.refresh(tenant)
+
+    # Invalidate Redis cache
+    invalidate_redis_verification_cache(tenant.id)
+
+    return {
+        "status": "success",
+        "message": f"Company '{tenant.company_name}' verification has been rejected.",
+        "company_id": tenant.id,
+        "verification_status": tenant.verification_status.value,
+        "rejection_reason": tenant.rejection_reason
+    }
+
+@router.post("/company-verifications/{company_id}/suspend")
+def suspend_company_verification(
+    company_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(auth_controller.require_role([UserRole.SUPER_ADMIN]))
+):
+    """
+    Super Admin: Suspend company account (APPROVED -> SUSPENDED).
+    Immediately blocks business operations.
+    """
+    tenant = db.query(Tenant).filter(Tenant.id == company_id).first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Company / Tenant workspace not found.")
+
+    # Enforce state transition
+    validate_state_transition(tenant.verification_status, TenantVerificationStatus.SUSPENDED)
+
+    prev_status = tenant.verification_status.value if hasattr(tenant.verification_status, "value") else str(tenant.verification_status)
+
+    tenant.verification_status = TenantVerificationStatus.SUSPENDED
+    tenant.is_active = False
+
+    # Audit log
+    create_audit_entry(
+        db=db,
+        tenant_id=tenant.id,
+        action="SUSPENDED",
+        performed_by=current_user.id,
+        previous_status=prev_status,
+        new_status=TenantVerificationStatus.SUSPENDED.value
+    )
+
+    db.commit()
+    db.refresh(tenant)
+
+    # Invalidate Redis cache
+    invalidate_redis_verification_cache(tenant.id)
+
+    return {
+        "status": "success",
+        "message": f"Company '{tenant.company_name}' has been suspended.",
+        "company_id": tenant.id,
+        "verification_status": tenant.verification_status.value
+    }
+
+@router.post("/company-verifications/{company_id}/reactivate")
+def reactivate_company_verification(
+    company_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(auth_controller.require_role([UserRole.SUPER_ADMIN]))
+):
+    """
+    Super Admin: Reactivate suspended company account (SUSPENDED -> APPROVED).
+    Restores normal tenant business permissions.
+    """
+    tenant = db.query(Tenant).filter(Tenant.id == company_id).first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Company / Tenant workspace not found.")
+
+    # Enforce state transition
+    validate_state_transition(tenant.verification_status, TenantVerificationStatus.APPROVED)
+
+    prev_status = tenant.verification_status.value if hasattr(tenant.verification_status, "value") else str(tenant.verification_status)
+
+    tenant.verification_status = TenantVerificationStatus.APPROVED
+    tenant.is_active = True
+
+    # Audit log
+    create_audit_entry(
+        db=db,
+        tenant_id=tenant.id,
+        action="REACTIVATED",
+        performed_by=current_user.id,
+        previous_status=prev_status,
+        new_status=TenantVerificationStatus.APPROVED.value
+    )
+
+    db.commit()
+    db.refresh(tenant)
+
+    # Invalidate Redis cache
+    invalidate_redis_verification_cache(tenant.id)
+
+    return {
+        "status": "success",
+        "message": f"Company '{tenant.company_name}' has been reactivated.",
+        "company_id": tenant.id,
+        "verification_status": tenant.verification_status.value
+    }
+
+# ---------------------------------------------------------
+# LEGACY ALIAS ENDPOINTS FOR BACKWARD COMPATIBILITY
+# ---------------------------------------------------------
+
+@router.get("/tenants/pending")
+def list_pending_tenants(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(auth_controller.require_role([UserRole.SUPER_ADMIN]))
+):
+    """Super Admin: Legacy endpoint to retrieve list of pending tenants."""
+    res = list_company_verifications(status_filter="PENDING", page=1, limit=100, db=db, current_user=current_user)
+    return res["items"]
+
+@router.post("/tenants/{tenant_id}/approve")
+def approve_tenant(
+    tenant_id: UUID,
+    payload: Optional[SuperAdminApproveRequest] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(auth_controller.require_role([UserRole.SUPER_ADMIN]))
+):
+    """Super Admin: Legacy endpoint to approve tenant."""
+    return approve_company_verification(company_id=tenant_id, payload=payload, db=db, current_user=current_user)
 
 @router.post("/tenants/{tenant_id}/reject")
 def reject_tenant(
     tenant_id: UUID,
-    payload: RejectTenantRequest,
+    payload: SuperAdminRejectRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(auth_controller.require_role([UserRole.SUPER_ADMIN]))
 ):
-    """Super Admin: Reject tenant verification with reason."""
-    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
-    if not tenant:
-        raise HTTPException(status_code=404, detail="Tenant workspace not found.")
+    """Super Admin: Legacy endpoint to reject tenant."""
+    return reject_company_verification(company_id=tenant_id, payload=payload, db=db, current_user=current_user)
 
-    tenant.verification_status = TenantVerificationStatus.REJECTED
-    tenant.is_active = False
-    tenant.rejection_reason = payload.reason
-
-    db.commit()
-    db.refresh(tenant)
-
-    return {
-        "status": "success",
-        "message": f"Tenant '{tenant.company_name}' verification has been rejected.",
-        "tenant_id": tenant.id,
-        "verification_status": tenant.verification_status,
-        "rejection_reason": tenant.rejection_reason
-    }
 

@@ -19,7 +19,7 @@ body {
   font-family: var(--font-sans);
   background-color: #ffffff;
   color: #0f172a;
-  overflow-x: hidden;
+  overflow-x: clip;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -72,13 +72,125 @@ h4 {
 
 /* 2. Page Title Text */
 .page-header-title {
-  font-family: 'Outfit';
+  font-family: 'Outfit', sans-serif;
   font-weight: 400;
-  font-size: 30px;
-  line-height: 38px;
+  font-size: clamp(20px, 2.2vw, 30px);
+  line-height: clamp(26px, 2.8vw, 38px);
   letter-spacing: 0%;
   color: #0a0a0a;
   margin: 0;
+}
+
+/* 2b. Light Text Description */
+.light-text {
+  font-family: 'Outfit', sans-serif;
+  font-weight: 400;
+  font-style: normal;
+  font-size: clamp(13px, 1.1vw, 16px);
+  line-height: clamp(18px, 1.5vw, 24px);
+  letter-spacing: 0%;
+  color: #6D8A96;
+  opacity: 1;
+}
+
+/* 2c. Role Selection Card Specs */
+.role-card-box {
+  width: 100%;
+  min-height: clamp(120px, 14vh, 134px);
+  background: #FFFFFF;
+  border-radius: 8px;
+  padding: clamp(12px, 1.2vw, 16px);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  border: 0.5px solid #E4E4E7;
+  transition: all 0.2s ease-in-out;
+  cursor: pointer;
+}
+
+.role-card-box.active {
+  border: 0.5px solid #1A1A1A;
+  box-shadow: 0px 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+/* 2d. Section Heading Specs */
+.section-heading {
+  font-family: 'Outfit', sans-serif;
+  font-weight: 500;
+  font-style: normal;
+  font-size: clamp(18px, 1.8vw, 24px);
+  line-height: clamp(24px, 2.4vw, 32px);
+  letter-spacing: 0%;
+  color: #1A1A1A;
+}
+
+/* 2e. Form Input Label Specs */
+.form-label {
+  font-family: 'Outfit', sans-serif;
+  font-weight: 400;
+  font-style: normal;
+  font-size: clamp(14px, 1.1vw, 16px);
+  line-height: 24px;
+  letter-spacing: 0%;
+  color: #0A0A0A;
+  display: block;
+  margin-bottom: 4px;
+}
+
+/* 2f. Search Bar Specs */
+.search-bar-input {
+  width: 100%;
+  height: 56px;
+  background: #FFFFFF;
+  border: 1px solid #D4D4D4;
+  border-radius: 8px;
+  padding: 16px 20px 16px 44px;
+  font-family: 'Outfit', sans-serif;
+  font-weight: 400;
+  font-size: 16px;
+  line-height: 24px;
+  color: #0A0A0A;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.search-bar-input::placeholder {
+  color: #6D8A96;
+}
+
+.search-bar-input:focus {
+  border-color: #1A1A1A;
+}
+
+/* 2g. Filter Status Tab Specs */
+.filter-tab-pill {
+  height: 36px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 0.5px solid #D4D4D4;
+  background: #FFFFFF;
+  font-family: 'Outfit', sans-serif;
+  font-weight: 400;
+  font-size: 14px;
+  line-height: 20px;
+  color: #6D8A96;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.filter-tab-pill:hover {
+  border-color: #A1A1AA;
+}
+
+.filter-tab-pill.active {
+  background: #18181B;
+  border-color: #18181B;
+  color: #FFFFFF;
+  font-weight: 500;
 }
 
 /* 3. Table Container Box */
@@ -125,13 +237,12 @@ h4 {
 .table-td {
   font-family: 'Outfit' !important;
   font-weight: 400 !important;
-  font-size: 16px !important;
-  line-height: 24px !important;
-  letter-spacing: 0% !important;
+  font-size: 14px !important;
+  line-height: 20px !important;
   color: #09090b;
-  height: 64px !important;
-  padding: 0 20px !important;
-  vertical-align: middle;
+  min-height: 64px;
+  padding: 16px 20px !important;
+  vertical-align: middle !important;
 }
 
 .table-td span,
@@ -216,4 +327,154 @@ div,
 section {
   -ms-overflow-style: none !important;
   scrollbar-width: none !important;
+}
+
+/* Side Arc Upward Flow Animations (5 Figma Positions) */
+@keyframes leftArcFlow {
+  0% {
+    top: 678.68px;
+    left: 6.05px;
+    transform: rotate(12deg);
+    opacity: 0.2;
+  }
+  6% {
+    opacity: 1;
+  }
+  25% {
+    top: 514.79px;
+    left: 86.14px;
+    transform: rotate(6deg);
+    opacity: 1;
+  }
+  50% {
+    top: 349.79px;
+    left: 160px;
+    transform: rotate(0deg);
+    opacity: 1;
+  }
+  75% {
+    top: 168.93px;
+    left: 82.71px;
+    transform: rotate(-6deg);
+    opacity: 1;
+  }
+  94% {
+    opacity: 1;
+  }
+  100% {
+    top: 0px;
+    left: 10px;
+    transform: rotate(-12deg);
+    opacity: 0.2;
+  }
+}
+
+@keyframes rightArcFlow {
+  0% {
+    top: 678.68px;
+    right: 6.05px;
+    transform: rotate(-12deg);
+    opacity: 0.2;
+  }
+  6% {
+    opacity: 1;
+  }
+  25% {
+    top: 514.79px;
+    right: 86.14px;
+    transform: rotate(-6deg);
+    opacity: 1;
+  }
+  50% {
+    top: 349.79px;
+    right: 160px;
+    transform: rotate(0deg);
+    opacity: 1;
+  }
+  75% {
+    top: 168.93px;
+    right: 82.71px;
+    transform: rotate(6deg);
+    opacity: 1;
+  }
+  94% {
+    opacity: 1;
+  }
+  100% {
+    top: 0px;
+    right: 10px;
+    transform: rotate(12deg);
+    opacity: 0.2;
+  }
+}
+
+.left-orbit-card {
+  animation: leftArcFlow 20s linear infinite;
+  will-change: top, left, transform, opacity;
+}
+
+.right-orbit-card {
+  animation: rightArcFlow 20s linear infinite;
+  will-change: top, right, transform, opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .left-orbit-card,
+  .right-orbit-card {
+    animation: none !important;
+  }
+}
+
+/* Horizontal Infinite Marquee Animation for Logo Cards */
+@keyframes logoMarquee {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-marquee {
+  display: flex;
+  width: max-content;
+  animation: logoMarquee 25s linear infinite;
+  will-change: transform;
+}
+
+/* HEADER STYLES & STICKY TRANSITIONS */
+.page-header {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  padding: 0;
+  z-index: 100 !important;
+  background-color: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  transition: all 0.35s ease-in-out;
+}
+
+.page-header.is-sticky {
+  position: fixed;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 100 !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  padding: 0;
+  background-color: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  animation: slideDown 0.35s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    transform: translateY(-100%);
+  }
+  to {
+    transform: translateY(0);
+  }
 }

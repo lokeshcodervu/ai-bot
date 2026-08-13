@@ -7,12 +7,14 @@ import { useStore } from './store';
 // Light SaaS Landing Page Section Components
 import { Navbar } from '../components/landing/Navbar';
 import { HeroSection } from '../components/landing/HeroSection';
+import { TrustedProofSection } from '../components/landing/TrustedProofSection';
+import { WatchConversationSection } from '../components/landing/WatchConversationSection';
+import { LiveConversationSection } from '../components/landing/LiveConversationSection';
 import { PartnerLogos } from '../components/landing/PartnerLogos';
 import { MetricsBar } from '../components/landing/MetricsBar';
 import { LeadLifecycleSection } from '../components/landing/LeadLifecycleSection';
 import { CoreFeaturesSection } from '../components/landing/CoreFeaturesSection';
 import { VoiceEngineSection } from '../components/landing/VoiceEngineSection';
-import { IndiaComplianceSection } from '../components/landing/IndiaComplianceSection';
 import { RealImpactSection } from '../components/landing/RealImpactSection';
 import { TestimonialsSection } from '../components/landing/TestimonialsSection';
 import { PricingSection } from '../components/landing/PricingSection';
@@ -47,51 +49,45 @@ export default function LandingPage() {
   };
 
   return (
-    <div className="min-h-screen bg-white text-slate-900 font-sans selection:bg-blue-600 selection:text-white overflow-x-hidden">
-      
-      {/* 1. Header / Navbar */}
+    <div className="min-h-screen bg-white text-slate-900 font-sans selection:bg-blue-600 selection:text-white overflow-x-clip">
+
+      {/* 1. Header / Navigation Bar */}
       <Navbar onOpenAuthModal={handleOpenAuthModal} />
 
-      {/* 2. Hero Section + Real Application Preview Window */}
+      {/* 2. Hero Section: "Every Lead Deserves a Conversation." */}
       <HeroSection onOpenAuthModal={handleOpenAuthModal} />
 
-      {/* 3. Grayscale Partner Enterprise Logo Wall */}
-      <PartnerLogos />
+      {/* 3. Customer Testimonial & Trusted Proof Bar (Metrics: 70%, 4x, 64%) */}
+      <TrustedProofSection />
 
-      {/* 4. Technical Benchmarks & Metrics */}
-      <MetricsBar />
+      {/* 4. Real-Time Streaming Live Call Monitor Console */}
+      <LiveConversationSection />
 
-      {/* 5. How It Works: Timeline Process (Step 1 ➔ 5) */}
+      {/* 5. How It Works Timeline Process: "From Zero to Calling in Minutes" */}
       <LeadLifecycleSection />
 
-      {/* 6. Core Enterprise Capabilities */}
-      <CoreFeaturesSection />
-
-      {/* 7. Multilingual Speech Engine (Sarvam AI & ElevenLabs) */}
+      {/* 6. Multilingual Speech Engine: "Meet your prospects in the language they prefer." */}
       <VoiceEngineSection />
 
-      {/* 8. Regulated India Telephony & Compliance */}
-      <IndiaComplianceSection />
-
-      {/* 9. Measured Business Outcomes & ROI Calculator */}
+      {/* 7. Measured Business Outcomes & ROI Calculator: "More conversations. Less repetitive work." */}
       <RealImpactSection />
 
-      {/* 10. Human Customer Proof & Testimonials */}
-      <TestimonialsSection />
+      {/* 8. Native Tools Connectivity Showcase: 10 Side-Arc Revolving Logo Cards Dark Box Section */}
+      <WatchConversationSection />
 
-      {/* 11. 3-Tier Predictable SaaS Pricing Table */}
-      <PricingSection onOpenAuthModal={handleOpenAuthModal} />
-
-      {/* 12. Accordion Frequently Asked Questions */}
-      <FAQSection />
-
-      {/* 13. Security Standards Grid */}
+      {/* 9. Enterprise Security & Compliance Grid: "Built to the Highest Standard." */}
       <ComplianceGridSection />
 
-      {/* 14. High-Conversion Call To Action Banner */}
-      <CallToActionSection onOpenAuthModal={handleOpenAuthModal} />
+      {/* 10. Customer Testimonials Slider: "What our customers say" */}
+      <TestimonialsSection />
 
-      {/* 15. Clean 4-Column Light Footer */}
+      {/* 11. SaaS Pricing Table: "Predictable plans for every scale." */}
+      <PricingSection onOpenAuthModal={handleOpenAuthModal} />
+
+      {/* 12. Dark Accordion FAQ: "Frequently Asked Questions" + Documentation Frame 10 */}
+      <FAQSection />
+
+      {/* 13. 3D Particle Wave Dark Footer & CTA Banner: "See Closr AI Handle Your Telecalling & Sales Ops." */}
       <Footer />
 
       {/* 16. Integrated Sign In & Tenant Onboarding Modal */}

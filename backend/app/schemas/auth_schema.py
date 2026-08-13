@@ -9,6 +9,7 @@ class UserSignup(BaseModel):
     email: EmailStr
     password: str = Field(min_length=1)
     full_name: Optional[str] = None
+    role: Optional[UserRole] = None
 
 class SendSignupOTPRequest(BaseModel):
     signup_token: str
@@ -36,6 +37,8 @@ class Token(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+    user: Optional[dict] = None
+    tenant: Optional[dict] = None
 
 class TokenData(BaseModel):
     user_id: Optional[UUID] = None

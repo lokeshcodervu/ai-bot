@@ -6,11 +6,14 @@ import API_BASE from '../config/api';
 export const fetchApi = async (endpoint: string, options: RequestInit = {}) => {
   const url = endpoint.startsWith('http') ? endpoint : `${API_BASE}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
   
-  const headers = {
-    'Content-Type': 'application/json',
+  const headers: Record<string, string> = {
     'ngrok-skip-browser-warning': 'true',
-    ...(options.headers || {}),
+    ...(options.headers as Record<string, string> || {}),
   };
+
+  if (!(options.body instanceof FormData) && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  }
 
   const response = await fetch(url, {
     ...options,

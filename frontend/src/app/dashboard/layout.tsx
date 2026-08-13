@@ -20,7 +20,11 @@ import {
   LogOut,
   Menu,
   X,
-  ArrowUpRight
+  ArrowUpRight,
+  FileCheck,
+  Package,
+  Users2,
+  KeyRound
 } from 'lucide-react';
 
 import API_BASE from '../../config/api';
@@ -67,18 +71,29 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     try {
       const activeToken = token || (typeof window !== 'undefined' ? localStorage.getItem('token') : '');
       const formData = new FormData();
-      formData.append('country', reuploadCountry);
+      formData.append('country', reuploadCountry.toUpperCase() === 'UNITED KINGDOM' ? 'UNITED_KINGDOM' : reuploadCountry);
       formData.append('company_name', tenant?.companyName || 'Company');
       formData.append('company_email', tenant?.companyEmail || user?.email || '');
-      formData.append('company_phone', tenant?.companyPhone || '');
-      formData.append('owner_name', tenant?.ownerName || user?.full_name || '');
+      formData.append('phone_number', tenant?.companyPhone || '+919876543210');
+      formData.append('company_phone', tenant?.companyPhone || '+919876543210');
+      formData.append('owner_name', tenant?.ownerName || user?.full_name || 'Owner');
+      formData.append('registered_office_address', reuploadAddress.trim() || tenant?.registeredAddress || 'Office Address');
       formData.append('registered_address', reuploadAddress.trim() || tenant?.registeredAddress || 'Office Address');
-      if (reuploadCountry === 'United Kingdom') {
+      if (reuploadCompanyNumber.trim() || tenant?.companyNumber) {
         formData.append('company_number', reuploadCompanyNumber.trim() || tenant?.companyNumber || '');
       }
-      formData.append('verification_doc', reuploadDoc);
 
-      const res = await fetch(`${API_BASE}/onboarding/upload-company-doc`, {
+      if (reuploadDoc) {
+        formData.append('verification_doc', reuploadDoc);
+        if (reuploadCountry === 'India') {
+          formData.append('gst_doc', reuploadDoc);
+          formData.append('incorporation_doc', reuploadDoc);
+        } else {
+          formData.append('companies_house_doc', reuploadDoc);
+        }
+      }
+
+      const res = await fetch(`${API_BASE}/tenant/company-verification`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${activeToken}`,
@@ -124,33 +139,60 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   }, [token, mounted, router]);
 
   useEffect(() => {
-    async function loadWallet() {
+    async function loadUserProfileAndWallet() {
       if (!token) return;
       try {
+        // 1. Fetch user profile & tenant info
+        const meRes = await fetch(`${API_BASE}/auth/me`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'ngrok-skip-browser-warning': 'true'
+          }
+        });
+        if (meRes.status === 401) {
+          setToken(null);
+          setUser(null);
+          router.push('/');
+          return;
+        }
+        if (meRes.ok) {
+          const meData = await meRes.json();
+          setUser(meData);
+          if (meData.tenant) {
+            const normalizedTenant = {
+              ...meData.tenant,
+              verificationStatus: meData.tenant.verificationStatus || meData.tenant.verification_status,
+              companyName: meData.tenant.companyName || meData.tenant.company_name,
+              companyPhone: meData.tenant.companyPhone || meData.tenant.company_phone,
+              companyEmail: meData.tenant.companyEmail || meData.tenant.company_email,
+              registeredAddress: meData.tenant.registeredAddress || meData.tenant.registered_address,
+              companyNumber: meData.tenant.companyNumber || meData.tenant.company_number,
+              ownerName: meData.tenant.ownerName || meData.tenant.owner_name,
+              rejectionReason: meData.tenant.rejectionReason !== undefined ? meData.tenant.rejectionReason : meData.tenant.rejection_reason,
+            };
+            useStore.getState().setTenant(normalizedTenant);
+          }
+        }
+
+        // 2. Fetch wallet
         const res = await fetch(`${API_BASE}/tenant/wallet`, {
           headers: {
             'Authorization': `Bearer ${token}`,
             'ngrok-skip-browser-warning': 'true'
           }
         });
-        if (res.status === 401) {
-          setToken(null);
-          setUser(null);
-          router.push('/');
-          return;
-        }
         if (res.ok) {
           const data = await res.json();
           setWallet({ balance: data.balance / 100 });
         }
       } catch (err) {
-        console.error("Failed to load wallet balance:", err);
+        console.error("Failed to load user profile or wallet balance:", err);
       }
     }
     if (token) {
-      loadWallet();
+      loadUserProfileAndWallet();
     }
-  }, [token, setWallet]);
+  }, [token, setWallet, setToken, setUser, router]);
 
   const handleLogout = () => {
     setToken(null);
@@ -193,20 +235,31 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     }
   };
 
-  // Nav Items matching Figma design (AI Configuration removed from sidebar, integrated into Settings)
+  // Nav Items with Role-Based Access Control (RBAC)
   const navItems = [
-    { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
-    { name: 'Campaigns', path: '/dashboard/campaigns', icon: Megaphone },
-    { name: 'Leads', path: '/dashboard/leads', icon: Users },
-    { name: 'Live Monitor', path: '/dashboard/live-monitor', icon: Radio },
-    { name: 'Call Logs', path: '/dashboard/call-logs', icon: PhoneCall },
-    { name: 'Analytics', path: '/dashboard/analytics', icon: LineChart },
-    { name: 'User Management', path: '/dashboard/user-management', icon: UserCheck },
-    { name: 'Compilance', path: '/dashboard/compliance', icon: ShieldCheck },
-    { name: 'Billing', path: '/dashboard/billing', icon: CreditCard },
-    { name: 'Super Admin', path: '/dashboard/super-admin', icon: Award },
-    { name: 'Settings', path: '/dashboard/settings', icon: Settings },
+    { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, roles: ['SUPER_ADMIN', 'BUSINESS_OWNER', 'ADMIN', 'AGENT'] },
+    { name: 'Campaigns', path: '/dashboard/campaigns', icon: Megaphone, roles: ['SUPER_ADMIN', 'BUSINESS_OWNER', 'ADMIN'] },
+    { name: 'Leads', path: '/dashboard/leads', icon: Users, roles: ['SUPER_ADMIN', 'BUSINESS_OWNER', 'ADMIN', 'AGENT'] },
+    { name: 'Live Monitor', path: '/dashboard/live-monitor', icon: Radio, roles: ['SUPER_ADMIN', 'BUSINESS_OWNER', 'ADMIN'] },
+    { name: 'Call Logs', path: '/dashboard/call-logs', icon: PhoneCall, roles: ['SUPER_ADMIN', 'BUSINESS_OWNER', 'ADMIN', 'AGENT'] },
+    { name: 'Analytics', path: '/dashboard/analytics', icon: LineChart, roles: ['SUPER_ADMIN', 'BUSINESS_OWNER', 'ADMIN'] },
+    { name: 'All Users', path: '/dashboard/all-users', icon: Users2, roles: ['SUPER_ADMIN', 'BUSINESS_OWNER', 'ADMIN'] },
+    { name: 'Roles & Access', path: '/dashboard/roles-access', icon: KeyRound, roles: ['SUPER_ADMIN', 'BUSINESS_OWNER', 'ADMIN'] },
+    { name: 'Billing', path: '/dashboard/billing', icon: CreditCard, roles: ['SUPER_ADMIN', 'BUSINESS_OWNER', 'ADMIN'] },
+    { name: 'Settings', path: '/dashboard/settings', icon: Settings, roles: ['SUPER_ADMIN', 'BUSINESS_OWNER', 'ADMIN'] },
+
+    // Super Admin Only Pages:
+    { name: 'User Management', path: '/dashboard/user-management', icon: UserCheck, roles: ['SUPER_ADMIN'] },
+    { name: 'Company Approvals', path: '/dashboard/company-approvals', icon: FileCheck, roles: ['SUPER_ADMIN'] },
+    { name: 'Subscriptions & Plans', path: '/dashboard/subscriptions-plans', icon: Package, roles: ['SUPER_ADMIN'] },
+    { name: 'Compilance', path: '/dashboard/compliance', icon: ShieldCheck, roles: ['SUPER_ADMIN'] },
   ];
+
+  // Filter visible nav items based on user role
+  const currentUserRole = user?.role || 'BUSINESS_OWNER';
+  const visibleNavItems = navItems.filter(item =>
+    !item.roles || item.roles.includes(currentUserRole) || currentUserRole === 'SUPER_ADMIN'
+  );
 
   const handleNavClick = (item: typeof navItems[0]) => {
     setIsMobileMenuOpen(false);
@@ -232,7 +285,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
       {/* Navigation Links */}
       <nav className="flex-1 overflow-y-auto px-4 py-6 space-y-1.5 custom-scrollbar">
-        {navItems.map((item) => {
+        {visibleNavItems.map((item) => {
           const Icon = item.icon;
           const isActive = pathname === item.path;
           return (
@@ -240,8 +293,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
               key={item.name}
               onClick={() => handleNavClick(item)}
               className={`w-full flex items-center px-4 py-3 rounded-lg text-sm font-semibold transition-all duration-150 ${isActive
-                  ? 'bg-[#111111] text-white shadow-sm'
-                  : 'text-[#475569] hover:text-black hover:bg-[#f1f5f9]'
+                ? 'bg-[#111111] text-white shadow-sm'
+                : 'text-[#475569] hover:text-black hover:bg-[#f1f5f9]'
                 }`}
             >
               <Icon className={`h-5 w-5 mr-3.5 ${isActive ? 'text-white' : 'text-[#94a3b8]'}`} />
@@ -337,7 +390,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         </header>
 
         {/* VERIFICATION STATUS BANNERS */}
-        {tenant?.verificationStatus === 'PENDING' ? (
+        {!(user?.role === 'SUPER_ADMIN' || user?.role === 'Super Admin') && tenant?.verificationStatus === 'PENDING' ? (
           <div className="bg-amber-500 text-slate-950 px-6 py-3 border-b border-amber-600 flex items-center justify-between shadow-xs">
             <div className="flex items-center space-x-3">
               <span className="text-xl">🔒</span>
@@ -354,7 +407,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
               Read-Only
             </span>
           </div>
-        ) : tenant?.verificationStatus === 'REJECTED' ? (
+        ) : !(user?.role === 'SUPER_ADMIN' || user?.role === 'Super Admin') && tenant?.verificationStatus === 'REJECTED' ? (
           <div className="bg-red-600 text-white px-6 py-3 border-b border-red-700 flex items-center justify-between shadow-xs">
             <div className="flex items-center space-x-3">
               <span className="text-xl">⚠️</span>
@@ -379,7 +432,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
               Re-upload Documents
             </button>
           </div>
-        ) : tenant?.verificationStatus === 'SUSPENDED' ? (
+        ) : !(user?.role === 'SUPER_ADMIN' || user?.role === 'Super Admin') && tenant?.verificationStatus === 'SUSPENDED' ? (
           <div className="bg-slate-900 text-white px-6 py-3 border-b border-slate-950 flex items-center justify-between shadow-xs">
             <div className="flex items-center space-x-3">
               <span className="text-xl">🚫</span>

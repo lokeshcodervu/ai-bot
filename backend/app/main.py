@@ -9,10 +9,11 @@ from app.routes import auth_routes, user_routes, tenant_routes, onboarding_route
 
 import sys
 
-# Automatically build database tables (skip during testing)
+# Automatically build database tables and apply schema migrations (skip during testing)
 if "pytest" not in sys.modules:
     Base.metadata.create_all(bind=engine)
-    from app.database.connection import seed_default_plans
+    from app.database.connection import seed_default_plans, apply_database_migrations
+    apply_database_migrations(engine)
     seed_default_plans()
 
 app = FastAPI(

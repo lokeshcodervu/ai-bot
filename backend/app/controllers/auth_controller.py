@@ -88,19 +88,20 @@ def blacklist_jwt_token(db: Session, token: str) -> bool:
         return False
 
 def require_role(allowed_roles: list[UserRole]):
-    """Enforce role checking. Returns a dependency function."""
+    """Enforce role checking. Returns a dependency function. SUPER_ADMIN gets full unrestricted access."""
     def role_dependency(current_user = Depends(get_current_user)):
-        if current_user.role not in allowed_roles:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Not enough permissions to access this resource"
-            )
-        return current_user
+        if current_user.role == UserRole.SUPER_ADMIN or current_user.role in allowed_roles:
+            return current_user
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not enough permissions to access this resource"
+        )
     return role_dependency
 
 def require_approved_tenant(current_user = Depends(get_current_user)):
     """
-    Dependency ensuring the tenant workspace is APPROVED by Super Admin.
+    Centralized Access Control Dependency:
+    Ensures the company workspace is APPROVED by Super Admin before allowing business mutations.
     Super Admin users bypass this check.
     """
     if current_user.role == UserRole.SUPER_ADMIN:
@@ -113,10 +114,46 @@ def require_approved_tenant(current_user = Depends(get_current_user)):
         )
 
     from app.models.tenant import TenantVerificationStatus
-    if current_user.tenant.verification_status != TenantVerificationStatus.APPROVED:
+    ver_status = current_user.tenant.verification_status
+
+    if ver_status == TenantVerificationStatus.APPROVED:
+        return current_user
+
+    if ver_status == TenantVerificationStatus.PENDING:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Your company verification is currently PENDING or REJECTED. Modifying actions are restricted until approved."
+            detail={
+                "code": "COMPANY_VERIFICATION_REQUIRED",
+                "status": "PENDING",
+                "message": "Company verification is pending. Full access will be available after Super Admin approval."
+            }
         )
 
-    return current_user
+    if ver_status == TenantVerificationStatus.REJECTED:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "COMPANY_VERIFICATION_REJECTED",
+                "status": "REJECTED",
+                "message": "Company verification was rejected.",
+                "rejection_reason": current_user.tenant.rejection_reason or "Invalid company documents or verification details provided."
+            }
+        )
+
+    if ver_status == TenantVerificationStatus.SUSPENDED:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "COMPANY_SUSPENDED",
+                "status": "SUSPENDED",
+                "message": "Company access has been suspended."
+            }
+        )
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Company verification is required."
+    )
+
+# Alias for API specification consistency
+require_approved_company = require_approved_tenant

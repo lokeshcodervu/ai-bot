@@ -15,8 +15,9 @@ import {
 } from 'lucide-react';
 
 export default function CampaignsPage() {
-  const { campaigns, addCampaign, updateCampaign, leads, updateLeadStatus, tenant } = useStore();
-  const isReadOnly = tenant?.verificationStatus !== 'APPROVED';
+  const { user, campaigns, addCampaign, updateCampaign, leads, updateLeadStatus, tenant } = useStore();
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'Super Admin';
+  const isReadOnly = !isSuperAdmin && tenant?.verificationStatus !== 'APPROVED';
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [activeCallLead, setActiveCallLead] = useState<Lead | null>(null);

@@ -1,236 +1,327 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Volume2, Play, Pause } from 'lucide-react';
+import React, { useState, useCallback } from 'react';
+import { Play, Pause, ChevronLeft, ChevronRight, ArrowUpRight } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+
+interface VoiceSample {
+  id: number;
+  name: string;
+  langInfo: string;
+  tone: string;
+  sampleText: string;
+  introText: string;
+  langCode: string;
+}
 
 export const VoiceEngineSection: React.FC = () => {
-  const [activeVoice, setActiveVoice] = useState<number | null>(null);
+  const [activeVoiceIndex, setActiveVoiceIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [selectedProvider, setSelectedProvider] = useState<'all' | 'regional' | 'global'>('all');
 
-  const voices = [
+  const voiceList: VoiceSample[] = [
     {
       id: 0,
-      language: 'Hindi (हिंदी)',
-      accent: 'North India Regional',
-      provider: 'Regional Voice Engine',
-      providerType: 'regional',
-      gender: 'Female (Priya)',
-      langCode: 'hi-IN',
-      sampleText: 'नमस्ते राहुल जी, आपकी हेल्थ इंश्योरेंस पॉलिसी का रिन्यूअल बोनस एक्टिव हो गया है।',
-      sampleRate: 'Clean Voice Stream'
+      name: 'Neha',
+      langInfo: 'Hindi–English · Female · India',
+      tone: 'Warm, professional',
+      sampleText: 'Hello Mr. Sharma, I am Neha from Star Health Insurance. I noticed your policy is due for renewal.',
+      introText: 'Tap play to hear how Neha opens the call, or you can also try interacting with it.',
+      langCode: 'en-IN'
     },
     {
       id: 1,
-      language: 'Hinglish (Code-Switching)',
-      accent: 'Indian Urban Metro',
-      provider: 'Hinglish Speech Engine',
-      providerType: 'regional',
-      gender: 'Male (Rohan)',
-      langCode: 'en-IN',
-      sampleText: 'Hi Mr. Sharma! Aapki policy expiry 15th August ko hai. Shall I process the 10% discount now?',
-      sampleRate: 'Clean Voice Stream'
+      name: 'Priya',
+      langInfo: 'Hindi (हिंदी) · Female · India',
+      tone: 'Friendly, empathetic',
+      sampleText: 'नमस्ते राहुल जी, आपकी हेल्थ इंश्योरेंस पॉलिसी का रिन्यूअल बोनस एक्टिव हो गया है।',
+      introText: 'Tap play to hear how Priya counsels policy holders in natural Hindi.',
+      langCode: 'hi-IN'
     },
     {
       id: 2,
-      language: 'Indian English',
-      accent: 'Professional Sales Corporate',
-      provider: 'Global Voice Engine',
-      providerType: 'global',
-      gender: 'Female (Rachel)',
-      langCode: 'en-IN',
-      sampleText: 'Good afternoon. I am calling from Star Health Insurance regarding your annual policy review.',
-      sampleRate: 'Clean Voice Stream'
+      name: 'Rohan',
+      langInfo: 'Hinglish · Male · India',
+      tone: 'Confident, conversational',
+      sampleText: 'Hi Mr. Sharma! Aapki policy expiry 15th August ko hai. Shall I process the 10% discount now?',
+      introText: 'Tap play to hear Rohan speak in natural code-switching Hinglish.',
+      langCode: 'en-IN'
     },
     {
       id: 3,
-      language: 'Tamil (தமிழ்)',
-      accent: 'Chennai Regional',
-      provider: 'Regional Voice Engine',
-      providerType: 'regional',
-      gender: 'Female (Kavitha)',
-      langCode: 'ta-IN',
-      sampleText: 'வணக்கம், உங்கள் ஹெல்த் பாலிசி புதுப்பித்தல் சலுகைகள் தயாராக உள்ளன.',
-      sampleRate: 'Clean Voice Stream'
-    },
-    {
-      id: 4,
-      language: 'Telugu (తెలుగు)',
-      accent: 'Hyderabad Regional',
-      provider: 'Regional Voice Engine',
-      providerType: 'regional',
-      gender: 'Male (Kalyan)',
-      langCode: 'te-IN',
-      sampleText: 'నమస్కారం, మీ హెల్త్ ఇన్సూరెన్స్ పాలసీ రెన్యూవల్ బోనస్ యాక్టివ్ చేయబడింది.',
-      sampleRate: 'Clean Voice Stream'
-    },
-    {
-      id: 5,
-      language: 'Marathi (मराठी)',
-      accent: 'Mumbai/Pune Regional',
-      provider: 'Regional Voice Engine',
-      providerType: 'regional',
-      gender: 'Female (Ananya)',
-      langCode: 'mr-IN',
-      sampleText: 'नमस्कार, तुमच्या हेल्थ इन्शुरन्स पॉलिसीचे नूतनीकरण बोनस सक्रिय केले आहे.',
-      sampleRate: 'Clean Voice Stream'
+      name: 'Vikram',
+      langInfo: 'Indian English · Male · India',
+      tone: 'Authoritative, executive',
+      sampleText: 'Good afternoon. I am calling regarding your annual enterprise sales consultation schedule.',
+      introText: 'Tap play to hear Vikram conduct an executive outbound dialer call.',
+      langCode: 'en-IN'
     }
   ];
 
-  const filteredVoices = voices.filter(
-    (v) => selectedProvider === 'all' || v.providerType === selectedProvider
-  );
+  const currentVoice = voiceList[activeVoiceIndex] || voiceList[0];
 
-  const togglePlay = (id: number, text: string, langCode: string) => {
-    if (activeVoice === id && isPlaying) {
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-      }
-      setIsPlaying(false);
-      setActiveVoice(null);
-    } else {
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = langCode;
-        utterance.rate = 0.95;
-
-        utterance.onend = () => {
-          setIsPlaying(false);
-          setActiveVoice(null);
-        };
-
-        window.speechSynthesis.speak(utterance);
-      }
-      setActiveVoice(id);
-      setIsPlaying(true);
+  const handlePrev = () => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
     }
+    setIsPlaying(false);
+    setActiveVoiceIndex((prev) => (prev === 0 ? voiceList.length - 1 : prev - 1));
   };
 
-  return (
-    <section id="multilingual" className="py-24 bg-slate-50 border-b border-slate-200 text-slate-900">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        
-        {/* Header */}
-        <div className="text-center max-w-3xl mx-auto mb-16 space-y-3">
-          <span className="text-xs font-bold font-mono uppercase tracking-widest text-amber-800 px-3.5 py-1.5 rounded-full bg-amber-50 border border-amber-200">
-            Multilingual Voice AI Engine
-          </span>
-          <h2 className="text-3xl sm:text-5xl font-black tracking-tight text-slate-900 font-display uppercase leading-tight">
-            SPEAKING EVERY LANGUAGE<br />
-            <span className="text-amber-500 font-display uppercase block mt-1">THAT MATTERS.</span>
-          </h2>
-          <p className="text-slate-600 text-base sm:text-lg">
-            Switch seamlessly between global English and regional Indian languages with natural Hinglish code-switching.
-          </p>
+  const handleNext = () => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    setIsPlaying(false);
+    setActiveVoiceIndex((prev) => (prev === voiceList.length - 1 ? 0 : prev + 1));
+  };
 
-          {/* Provider Filter Toggle */}
-          <div className="pt-4 flex items-center justify-center space-x-2">
-            <button
-              onClick={() => setSelectedProvider('all')}
-              className={`px-4 py-2 rounded-full text-xs font-bold transition-all ${
-                selectedProvider === 'all'
-                  ? 'bg-amber-500 text-white shadow-sm'
-                  : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
-              }`}
-            >
-              All Voice Models ({voices.length})
-            </button>
-            <button
-              onClick={() => setSelectedProvider('regional')}
-              className={`px-4 py-2 rounded-full text-xs font-bold transition-all ${
-                selectedProvider === 'regional'
-                  ? 'bg-amber-500 text-white shadow-sm'
-                  : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
-              }`}
-            >
-              Regional Indian Voices
-            </button>
-            <button
-              onClick={() => setSelectedProvider('global')}
-              className={`px-4 py-2 rounded-full text-xs font-bold transition-all ${
-                selectedProvider === 'global'
-                  ? 'bg-amber-500 text-white shadow-sm'
-                  : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
-              }`}
-            >
-              Global Voices
+  const togglePlay = useCallback(() => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+
+    if (isPlaying) {
+      window.speechSynthesis.cancel();
+      setIsPlaying(false);
+    } else {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(currentVoice.sampleText);
+      utterance.lang = currentVoice.langCode;
+      utterance.onend = () => setIsPlaying(false);
+      utterance.onerror = () => setIsPlaying(false);
+
+      const voices = window.speechSynthesis.getVoices();
+      const matchedVoice = voices.find(v => v.lang.includes('IN') || v.lang.includes('hi') || v.name.includes('Google'));
+      if (matchedVoice) utterance.voice = matchedVoice;
+
+      window.speechSynthesis.speak(utterance);
+      setIsPlaying(true);
+    }
+  }, [isPlaying, currentVoice]);
+
+  const waveformBars = [
+    { h: 4, isDot: true, bg: 'bg-[#0F172A]' },
+    { h: 6, isDot: true, bg: 'bg-[#94A3B8]' },
+    { h: 26, isDot: false, bg: 'bg-[#94A3B8]' },
+    { h: 30, isDot: false, bg: 'bg-[#0F172A]' },
+    { h: 4, isDot: true, bg: 'bg-[#0F172A]' },
+    { h: 6, isDot: true, bg: 'bg-[#94A3B8]' },
+    { h: 16, isDot: false, bg: 'bg-[#94A3B8]' },
+    { h: 18, isDot: false, bg: 'bg-[#0F172A]' },
+    { h: 4, isDot: true, bg: 'bg-[#0F172A]' },
+    { h: 6, isDot: true, bg: 'bg-[#94A3B8]' },
+    { h: 26, isDot: false, bg: 'bg-[#0F172A]' },
+    { h: 26, isDot: false, bg: 'bg-[#0F172A]' },
+    { h: 4, isDot: true, bg: 'bg-[#0F172A]' },
+    { h: 4, isDot: true, bg: 'bg-[#0F172A]' },
+    { h: 16, isDot: false, bg: 'bg-[#0F172A]' },
+    { h: 18, isDot: false, bg: 'bg-[#94A3B8]' },
+    { h: 28, isDot: false, bg: 'bg-[#0F172A]' },
+    { h: 28, isDot: false, bg: 'bg-[#94A3B8]' },
+    { h: 4, isDot: true, bg: 'bg-[#0F172A]' },
+    { h: 4, isDot: true, bg: 'bg-[#0F172A]' },
+    { h: 16, isDot: false, bg: 'bg-[#94A3B8]' },
+    { h: 16, isDot: false, bg: 'bg-[#94A3B8]' },
+    { h: 28, isDot: false, bg: 'bg-[#0F172A]' },
+    { h: 28, isDot: false, bg: 'bg-[#94A3B8]' },
+    { h: 30, isDot: false, bg: 'bg-[#94A3B8]' },
+    { h: 4, isDot: true, bg: 'bg-[#0F172A]' },
+    { h: 4, isDot: true, bg: 'bg-[#0F172A]' },
+    { h: 28, isDot: false, bg: 'bg-[#0F172A]' },
+    { h: 28, isDot: false, bg: 'bg-[#94A3B8]' },
+    { h: 4, isDot: true, bg: 'bg-[#94A3B8]' },
+    { h: 4, isDot: true, bg: 'bg-[#0F172A]' },
+    { h: 16, isDot: false, bg: 'bg-[#94A3B8]' },
+    { h: 18, isDot: false, bg: 'bg-[#0F172A]' },
+    { h: 20, isDot: false, bg: 'bg-[#94A3B8]' },
+    { h: 22, isDot: false, bg: 'bg-[#0F172A]' },
+    { h: 4, isDot: true, bg: 'bg-[#94A3B8]' },
+    { h: 28, isDot: false, bg: 'bg-[#0F172A]' },
+    { h: 28, isDot: false, bg: 'bg-[#94A3B8]' },
+    { h: 4, isDot: true, bg: 'bg-[#94A3B8]' },
+    { h: 4, isDot: true, bg: 'bg-[#0F172A]' },
+    { h: 16, isDot: false, bg: 'bg-[#94A3B8]' },
+    { h: 18, isDot: false, bg: 'bg-[#0F172A]' },
+    { h: 4, isDot: true, bg: 'bg-[#0F172A]' },
+    { h: 4, isDot: true, bg: 'bg-[#0F172A]' },
+    { h: 26, isDot: false, bg: 'bg-[#94A3B8]' },
+    { h: 30, isDot: false, bg: 'bg-[#0F172A]' },
+    { h: 20, isDot: false, bg: 'bg-[#94A3B8]' },
+    { h: 22, isDot: false, bg: 'bg-[#0F172A]' },
+    { h: 4, isDot: true, bg: 'bg-[#94A3B8]' },
+    { h: 16, isDot: false, bg: 'bg-[#94A3B8]' },
+    { h: 18, isDot: false, bg: 'bg-[#0F172A]' },
+    { h: 4, isDot: true, bg: 'bg-[#0F172A]' },
+    { h: 4, isDot: true, bg: 'bg-[#0F172A]' },
+    { h: 30, isDot: false, bg: 'bg-[#0F172A]' },
+    { h: 30, isDot: false, bg: 'bg-[#0F172A]' }
+  ];
+
+  return (
+    <section className="w-full bg-[#F5F7FA] py-[40px] lg:py-[48px] overflow-hidden">
+      <div className="max-w-[1440px] mx-auto px-6 sm:px-[40px] lg:px-[60px] flex flex-col lg:flex-row items-center justify-between gap-[40px] lg:gap-[56px]">
+
+        {/* Left Section 2 (585px width) */}
+        <div className="w-full lg:w-[585px] flex flex-col gap-[24px] lg:gap-[32px]">
+          <div className="space-y-[16px]">
+            {/* Title */}
+            <h2 className="font-outfit font-normal text-4xl sm:text-5xl lg:text-[56px] leading-[1.15] lg:leading-[66px] tracking-[-0.02em] text-[#0A0A0A]">
+              Meet your prospects in the language they prefer.
+            </h2>
+
+            {/* Subtitle */}
+            <p className="font-outfit font-normal text-base sm:text-lg lg:text-[18px] leading-[28px] text-[#6D8A96] max-w-[480px]">
+              TeleBot helps your agents communicate naturally across languages, so language never becomes the reason a good opportunity gets missed.
+            </p>
+          </div>
+
+          {/* Action Button */}
+          <div>
+            <button className="h-[48px] bg-[#1A936F] hover:bg-[#15795b] text-white font-outfit font-medium text-base px-6 rounded-[8px] flex items-center space-x-2 transition-all shadow-md active:scale-95">
+              <span>Explore Languages</span>
+              <ArrowUpRight className="w-4 h-4" />
             </button>
           </div>
         </div>
 
-        {/* Voices Grid */}
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredVoices.map((v) => {
-            const isThisPlaying = activeVoice === v.id && isPlaying;
-            return (
-              <div
-                key={v.id}
-                className={`p-6 rounded-2xl border transition-all flex flex-col justify-between ${
-                  isThisPlaying
-                    ? 'bg-white border-amber-500 shadow-lg shadow-amber-500/10 ring-2 ring-amber-500/20'
-                    : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm'
-                }`}
-              >
-                <div>
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <span className="text-[10px] font-mono font-bold text-amber-600 uppercase tracking-widest block">
-                        {v.provider}
-                      </span>
-                      <h3 className="text-lg font-extrabold text-slate-900 mt-0.5">{v.language}</h3>
-                    </div>
+        {/* Right Section 3 (Voice Cards Stack & Carousel) */}
+        <div className="w-full lg:w-[700px] flex flex-col items-center justify-between gap-6 relative">
 
-                    <button
-                      onClick={() => togglePlay(v.id, v.sampleText, v.langCode)}
-                      className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all ${
-                        isThisPlaying
-                          ? 'bg-amber-500 text-white shadow'
-                          : 'bg-slate-100 text-slate-700 hover:bg-amber-500 hover:text-white'
+          {/* Overlapping Stack Deck Container with Framer Motion Animation */}
+          <div className="relative w-full max-w-[700px] h-[460px] flex items-start overflow-visible">
+            <AnimatePresence mode="sync">
+              {voiceList.map((voice, index) => {
+                const offset = (index - activeVoiceIndex + voiceList.length) % voiceList.length;
+                if (offset > 2) return null; // Only render top 3 stacked cards
+
+                const isCurrent = offset === 0;
+
+                return (
+                  <motion.div
+                    key={voice.id}
+                    className={`absolute left-0 top-0 w-full sm:w-[500px] lg:w-[520px] h-[460px] bg-white rounded-[16px] p-[24px] pb-[4px] border border-slate-200/90 flex flex-col justify-between ${isCurrent
+                        ? 'shadow-[0_4px_30px_rgba(0,0,0,0.09)]'
+                        : 'shadow-[0_4px_20px_rgba(0,0,0,0.08)]'
                       }`}
-                    >
-                      {isThisPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
-                    </button>
-                  </div>
+                    style={{ cursor: 'pointer' }}
+                    initial={{ scale: 0.8, x: 50, opacity: 0 }}
+                    animate={{
+                      scale: 1 - offset * 0.08,
+                      x: offset * 72,
+                      zIndex: voiceList.length - offset,
+                      opacity: 1 - offset * 0.2,
+                    }}
+                    exit={{ x: -100, opacity: 0 }}
+                    transition={{ duration: 0.3 }}
+                    onClick={() => {
+                      if (!isCurrent) {
+                        handleNext();
+                      }
+                    }}
+                  >
+                    <div className="space-y-4">
+                      {/* Header Row */}
+                      <div className="flex items-start justify-between">
+                        <div className="w-[220px]">
+                          <h3 className="w-[200px] h-[38px] font-outfit font-normal text-[30px] leading-[38px] text-[#0F172A] tracking-tight flex items-center">
+                            {voice.name}
+                          </h3>
+                          <p className="w-[200px] h-[48px] font-outfit font-normal text-[16px] leading-[24px] text-[#6D8A96] mt-1 flex flex-col justify-center">
+                            <span>{voice.langInfo}</span>
+                            <span className="text-xs text-[#6D8A96]/80">{voice.tone}</span>
+                          </p>
+                        </div>
 
-                  <div className="text-xs text-slate-500 flex items-center space-x-2 mb-4">
-                    <span className="px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-700 font-semibold">
-                      {v.gender}
-                    </span>
-                    <span>•</span>
-                    <span>{v.accent}</span>
-                  </div>
+                        {/* Play Button */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (isCurrent) {
+                              togglePlay();
+                            } else {
+                              handleNext();
+                            }
+                          }}
+                          className={`w-[44px] h-[44px] rounded-[12px] border flex items-center justify-center transition-all ${isCurrent && isPlaying
+                              ? 'bg-[#1A936F] text-white border-[#1A936F] shadow-md'
+                              : 'border-[#CBD5E1] hover:border-[#1A936F] hover:bg-emerald-50 text-slate-800 bg-white shadow-sm'
+                            }`}
+                          aria-label="Play Voice Sample"
+                        >
+                          {isCurrent && isPlaying ? (
+                            <Pause className="w-5 h-5 text-white stroke-[2]" />
+                          ) : (
+                            <Play className="w-5 h-5 text-slate-800 stroke-[1.75] ml-0.5" />
+                          )}
+                        </button>
+                      </div>
 
-                  <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 italic leading-relaxed">
-                    &quot;{v.sampleText}&quot;
-                  </div>
-                </div>
+                      {/* Audio Waveform Visualizer */}
+                      <div className="w-full max-w-[472px] h-[60px] bg-[#F8FAFC] border-[1.34px] border-[#E2E8F0] rounded-[12px] px-4 py-3 flex items-center justify-between gap-[3px]">
+                        {waveformBars.map((bar, i) => (
+                          <div
+                            key={i}
+                            className={`rounded-full transition-all duration-300 ${isCurrent && isPlaying ? 'bg-[#1A936F] animate-pulse' : bar.bg
+                              }`}
+                            style={{
+                              width: '3.5px',
+                              height:
+                                isCurrent && isPlaying
+                                  ? `${(bar.h * Math.sin(i + activeVoiceIndex)) % 32 + 8}px`
+                                  : `${bar.h}px`,
+                            }}
+                          />
+                        ))}
+                      </div>
 
-                {/* Animated Waveform indicator when playing */}
-                <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between">
-                  <div className="flex items-center space-x-1.5 text-xs text-slate-500">
-                    <Volume2 className={`w-4 h-4 ${isThisPlaying ? 'text-amber-500 animate-bounce' : 'text-slate-400'}`} />
-                    <span className="font-mono text-[11px]">{v.sampleRate}</span>
-                  </div>
-
-                  {isThisPlaying ? (
-                    <div className="flex items-center space-x-1">
-                      {[30, 80, 50, 90, 40, 70].map((h, i) => (
-                        <div
-                          key={i}
-                          className="w-1 bg-amber-500 rounded-full animate-pulse"
-                          style={{ height: `${h}%`, minHeight: '8px' }}
-                        />
-                      ))}
+                      {/* Notice Box */}
+                      <div className="w-full max-w-[472px] min-h-[90px] p-[16px] bg-[#F8FAFC] border-[1.34px] border-[#E2E8F0] rounded-[8px] flex items-center">
+                        <p className="font-outfit font-normal text-[15px] leading-[22px] text-[#6D8A96]">
+                          {voice.introText}
+                        </p>
+                      </div>
                     </div>
-                  ) : (
-                    <span className="text-[10px] text-slate-400 uppercase font-mono">Click Play to Listen</span>
-                  )}
-                </div>
 
-              </div>
-            );
-          })}
+                    {/* Bottom Section Card */}
+                    <div className="w-full max-w-[472px] h-[48px] p-[8px] gap-[10px] border-t border-[#D4D4D4] flex items-center justify-center">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (isCurrent) {
+                            togglePlay();
+                          } else {
+                            handleNext();
+                          }
+                        }}
+                        className="border-b border-[#1A1A1A] font-outfit font-medium text-[16px] leading-[24px] text-[#1A1A1A] text-center flex items-center justify-center hover:opacity-80 transition-all"
+                      >
+                        <span className="whitespace-nowrap leading-[24px] pb-0.5">
+                          Interact with {voice.name.toLowerCase()}
+                        </span>
+                      </button>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+          </div>
+
+          {/* Bottom Navigation Arrow Buttons */}
+          <div className="w-full sm:w-[520px] flex items-center justify-center space-x-3 pt-2">
+            <button
+              onClick={handlePrev}
+              className="w-10 h-10 rounded-full border border-[#CBD5E1] flex items-center justify-center text-slate-700 hover:border-[#0A0A0A] hover:bg-slate-100 transition-all active:scale-95 bg-white shadow-sm"
+              aria-label="Previous Voice"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+            <button
+              onClick={handleNext}
+              className="w-10 h-10 rounded-full border border-[#CBD5E1] flex items-center justify-center text-slate-700 hover:border-[#0A0A0A] hover:bg-slate-100 transition-all active:scale-95 bg-white shadow-sm"
+              aria-label="Next Voice"
+            >
+              <ChevronRight className="w-5 h-5" />
+            </button>
+          </div>
+
         </div>
 
       </div>

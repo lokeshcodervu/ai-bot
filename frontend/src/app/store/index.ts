@@ -181,8 +181,19 @@ export const useStore = create<AppState>((set) => ({
     }
     set({ user });
   },
-  setTenant: (tenantUpdates) => set((state) => {
-    const updatedTenant = state.tenant ? { ...state.tenant, ...tenantUpdates } as Tenant : {
+  setTenant: (tenantUpdates: any) => set((state) => {
+    const normUpdates = {
+      ...tenantUpdates,
+      verificationStatus: tenantUpdates.verificationStatus || tenantUpdates.verification_status || state.tenant?.verificationStatus,
+      companyName: tenantUpdates.companyName || tenantUpdates.company_name || state.tenant?.companyName,
+      companyPhone: tenantUpdates.companyPhone || tenantUpdates.company_phone || state.tenant?.companyPhone,
+      companyEmail: tenantUpdates.companyEmail || tenantUpdates.company_email || state.tenant?.companyEmail,
+      registeredAddress: tenantUpdates.registeredAddress || tenantUpdates.registered_address || state.tenant?.registeredAddress,
+      companyNumber: tenantUpdates.companyNumber || tenantUpdates.company_number || state.tenant?.companyNumber,
+      ownerName: tenantUpdates.ownerName || tenantUpdates.owner_name || state.tenant?.ownerName,
+      rejectionReason: tenantUpdates.rejectionReason !== undefined ? tenantUpdates.rejectionReason : (tenantUpdates.rejection_reason !== undefined ? tenantUpdates.rejection_reason : state.tenant?.rejectionReason),
+    };
+    const updatedTenant = state.tenant ? { ...state.tenant, ...normUpdates } as Tenant : {
       id: 'tenant-1',
       companyName: 'Star Health Insurance',
       website: 'https://starhealth.in',
@@ -191,7 +202,7 @@ export const useStore = create<AppState>((set) => ({
       systemPrompt: 'You are Priya, a helpful insurance coordinator answering inquiries.',
       systemPromptVersion: 1,
       isAiReady: true,
-      ...tenantUpdates
+      ...normUpdates
     } as Tenant;
     if (typeof window !== 'undefined') {
       localStorage.setItem('tenant', JSON.stringify(updatedTenant));

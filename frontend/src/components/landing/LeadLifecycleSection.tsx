@@ -1,207 +1,281 @@
 'use client';
 
-import React, { useState } from 'react';
-import { CheckCircle2, ChevronRight } from 'lucide-react';
+import React from 'react';
+import { Upload, Bot, Megaphone, Rocket, BarChart3, Search, Plus, Filter, ArrowUpRight } from 'lucide-react';
 
 export const LeadLifecycleSection: React.FC = () => {
-  const [activeStep, setActiveStep] = useState(0);
-
   const steps = [
     {
-      stepNum: '01',
-      title: 'Capture & Scrub Lead',
-      short: 'Step 1: Capture Lead',
-      description: 'Upload lead CSVs or stream via webhooks. System automatically scrubs phone numbers against National DND registries.',
-      badge: 'DND Scrubbed',
-      preview: {
-        title: 'Lead Intake Record',
-        items: [
-          { label: 'Prospect Name', value: 'Rahul Sharma (Delhi)' },
-          { label: 'Policy Type', value: 'Health Optima Multi-Cap' },
-          { label: 'DND Status', value: 'PASSED (Clean)' },
-          { label: 'Queue Status', value: 'READY_TO_DIAL' }
-        ]
-      }
+      id: 1,
+      icon: <Upload className="w-[36px] h-[36px] text-[#0A0A0A]" />,
+      title: 'Upload your leads',
+      description:
+        'Upload your existing leads in seconds and let TeleBot organize them into a ready-to-call pipeline.',
+      gradient: 'from-blue-200 via-indigo-100 to-purple-200',
+      mockup: (
+        <div className="w-full h-full bg-white rounded-[8px] p-4 font-outfit text-xs space-y-3 border border-slate-200 shadow-lg overflow-hidden">
+          {/* Header */}
+          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+            <div className="flex items-center space-x-2">
+              <span className="font-bold text-sm text-[#0A0A0A]">Logo</span>
+              <span className="text-[10px] text-slate-400">/ Leads</span>
+            </div>
+            <button className="px-2.5 py-1 bg-[#1A1A1A] text-white rounded text-[10px] font-medium flex items-center space-x-1">
+              <Plus className="w-3 h-3" />
+              <span>Import CSV</span>
+            </button>
+          </div>
+
+          {/* Search bar */}
+          <div className="flex items-center space-x-2">
+            <div className="flex-1 flex items-center space-x-2 bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 text-slate-500">
+              <Search className="w-3.5 h-3.5 text-slate-400" />
+              <span className="text-[11px]">Search leads by name or phone...</span>
+            </div>
+            <button className="px-2 py-1.5 border border-slate-200 rounded text-slate-600 flex items-center space-x-1">
+              <Filter className="w-3 h-3" />
+              <span className="text-[10px]">Filter</span>
+            </button>
+          </div>
+
+          {/* Table */}
+          <div className="border border-slate-200 rounded overflow-hidden">
+            <div className="bg-slate-50 grid grid-cols-5 p-2 font-bold text-[10px] text-slate-500 border-b border-slate-200">
+              <span>Name</span>
+              <span>Phone</span>
+              <span>Campaign</span>
+              <span>Status</span>
+              <span>Action</span>
+            </div>
+            {[
+              { name: 'Rahul Sharma', phone: '+91 98201 34521', camp: 'Health Q3', status: 'DND Passed', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+              { name: 'Ananya Sen', phone: '+91 98765 43210', camp: 'Auto Renew', status: 'DND Passed', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+              { name: 'Vikram Mehta', phone: '+91 91234 56789', camp: 'Term Life', status: 'Queued', color: 'bg-amber-50 text-amber-700 border-amber-200' },
+              { name: 'Priya Nair', phone: '+91 99887 76655', camp: 'Health Q3', status: 'DND Passed', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+            ].map((row, i) => (
+              <div key={i} className="grid grid-cols-5 p-2 text-[10px] border-b border-slate-100 items-center">
+                <span className="font-semibold text-slate-900">{row.name}</span>
+                <span className="text-slate-500 font-mono">{row.phone}</span>
+                <span className="text-slate-600">{row.camp}</span>
+                <span>
+                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border ${row.color}`}>
+                    {row.status}
+                  </span>
+                </span>
+                <span className="text-slate-400 hover:text-slate-900 cursor-pointer font-semibold">View</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )
     },
     {
-      stepNum: '02',
-      title: 'Automated Outbound Queue',
-      short: 'Step 2: AI Qualification',
-      description: 'Automated queue manager dispatches outbound dialers. Phone connects and initiates encrypted dual-stream audio channel.',
-      badge: 'Automated Queue',
-      preview: {
-        title: 'Call Session Payload',
-        items: [
-          { label: 'Call SID', value: 'CA89310a28f9e11' },
-          { label: 'Speech Recognition', value: 'Real-time Hinglish Engine' },
-          { label: 'Voice Synthesis', value: 'Priya (Regional Voice)' },
-          { label: 'Status', value: 'ENCRYPTED_STREAM_ACTIVE' }
-        ]
-      }
+      id: 2,
+      icon: <Bot className="w-[36px] h-[36px] text-[#0A0A0A]" />,
+      title: 'Configure your AI agent',
+      description:
+        'Set your agent\'s voice, custom prompt, and knowledge base to match your exact brand guidelines.',
+      gradient: 'from-cyan-200 via-sky-100 to-blue-200',
+      mockup: (
+        <div className="w-full h-full bg-white rounded-[8px] p-4 font-outfit text-xs space-y-3 border border-slate-200 shadow-lg overflow-hidden">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+            <div className="font-bold text-sm text-[#0A0A0A]">AI Agent Configuration</div>
+            <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[10px] font-semibold">Active Model</span>
+          </div>
+
+          <div className="space-y-2">
+            <div>
+              <label className="text-[10px] font-semibold text-slate-600">Agent Voice Selection</label>
+              <div className="mt-1 p-2 bg-slate-50 border border-slate-200 rounded font-semibold text-slate-800 flex justify-between items-center text-[11px]">
+                <span>Priya — Ultra Natural Indian English (Female)</span>
+                <span className="text-emerald-600 text-[9px]">Sub-400ms</span>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[10px] font-semibold text-slate-600">System Prompt & Behavior</label>
+              <div className="mt-1 p-2 bg-slate-50 border border-slate-200 rounded text-[10px] text-slate-700 font-mono h-16 overflow-hidden">
+                You are a senior health insurance advisor at Star Health. Counsel customers on policy renewals with verified 10% no-claim bonus...
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[10px] font-semibold text-slate-600">Knowledge Base Document</label>
+              <div className="mt-1 p-2 border border-dashed border-slate-300 rounded bg-white flex items-center justify-between text-[10px]">
+                <span className="font-medium text-slate-800">📄 insurance-policy-handbook-v2.pdf</span>
+                <span className="text-emerald-600 font-bold">Verified</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )
     },
     {
-      stepNum: '03',
-      title: 'Real-Time Voice Call',
-      short: 'Step 3: Call Customer',
-      description: 'AI agent converses in natural tone. Customer questions query Enterprise Knowledge Base under isolated workspace to prevent hallucinations.',
-      badge: 'Verified Policy Match',
-      preview: {
-        title: 'Knowledge Match Status',
-        items: [
-          { label: 'Query', value: '"What is waiting period for pre-existing parents?"' },
-          { label: 'Document', value: 'Section 4.2 - Senior Citizen Rider' },
-          { label: 'Match Score', value: '0.942 (Exact Match)' },
-          { label: 'Response', value: 'GROUND_TRUTH_VERIFIED' }
-        ]
-      }
+      id: 3,
+      icon: <Megaphone className="w-[36px] h-[36px] text-[#0A0A0A]" />,
+      title: 'Set up your campaign',
+      description:
+        'Assign calling schedules, retry limits, and regional routing rules to reach leads at the optimal time.',
+      gradient: 'from-purple-200 via-pink-100 to-rose-200',
+      mockup: (
+        <div className="w-full h-full bg-white rounded-[8px] p-4 font-outfit text-xs space-y-3 border border-slate-200 shadow-lg overflow-hidden">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+            <div className="font-bold text-sm text-[#0A0A0A]">Campaign Schedule & Rules</div>
+            <button className="px-2.5 py-1 bg-[#1A1A1A] text-white rounded text-[10px] font-medium">Save Campaign</button>
+          </div>
+
+          <div className="space-y-3 text-[11px]">
+            <div className="p-2.5 bg-slate-50 border border-slate-200 rounded flex justify-between items-center">
+              <span className="font-medium text-slate-700">Calling Window</span>
+              <span className="font-bold text-slate-900">09:00 AM — 07:00 PM (IST)</span>
+            </div>
+
+            <div className="p-2.5 bg-slate-50 border border-slate-200 rounded flex justify-between items-center">
+              <span className="font-medium text-slate-700">Max Retry Attempts</span>
+              <span className="font-bold text-slate-900">3 Retries (If Busy/No Answer)</span>
+            </div>
+
+            <div className="p-2.5 bg-slate-50 border border-slate-200 rounded flex justify-between items-center">
+              <span className="font-medium text-slate-700">DND Registry Scrubbing</span>
+              <span className="font-bold text-emerald-600">100% Strict TRAI Enforcement</span>
+            </div>
+          </div>
+        </div>
+      )
     },
     {
-      stepNum: '04',
-      title: 'AI Summary & Analytics',
-      short: 'Step 4: AI Summary',
-      description: 'AI Engine generates call summary, lead interest score (8.5/10), sentiment tag, and complete dialogue transcript.',
-      badge: 'AI Summary Engine',
-      preview: {
-        title: 'Call Disposition Output',
-        items: [
-          { label: 'Outcome', value: 'INTERESTED_RENEWAL' },
-          { label: 'Sentiment', value: 'POSITIVE (8.8/10)' },
-          { label: 'Next Action', value: 'Send WhatsApp Quote' },
-          { label: 'Duration', value: '2 mins 14 secs' }
-        ]
-      }
+      id: 4,
+      icon: <Rocket className="w-[36px] h-[36px] text-[#0A0A0A]" />,
+      title: 'Launch & start automated calling',
+      description:
+        'Your AI agents begin dialing prospects automatically with sub-400ms ultra-low latency.',
+      gradient: 'from-emerald-200 via-teal-100 to-cyan-200',
+      mockup: (
+        <div className="w-full h-full bg-white rounded-[8px] p-4 font-outfit text-xs space-y-3 border border-slate-200 shadow-lg overflow-hidden">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+            <div className="flex items-center space-x-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="font-bold text-sm text-[#0A0A0A]">Active Outbound Dialing</span>
+            </div>
+            <span className="font-mono text-[10px] text-slate-500">Speed: 50 calls/min</span>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2 text-center py-1">
+            <div className="p-2 bg-slate-50 border border-slate-200 rounded">
+              <div className="text-[9px] text-slate-500 uppercase">Dialed</div>
+              <div className="font-bold text-base text-slate-900">1,284</div>
+            </div>
+            <div className="p-2 bg-emerald-50 border border-emerald-200 rounded">
+              <div className="text-[9px] text-emerald-700 uppercase">Connected</div>
+              <div className="font-bold text-base text-emerald-700">942</div>
+            </div>
+            <div className="p-2 bg-amber-50 border border-amber-200 rounded">
+              <div className="text-[9px] text-amber-700 uppercase">Converted</div>
+              <div className="font-bold text-base text-amber-700">318</div>
+            </div>
+          </div>
+
+          <div className="p-2.5 bg-slate-900 text-white rounded text-[10px] font-mono flex items-center justify-between">
+            <span>Stream Status: Ultra-Low Latency Active</span>
+            <span className="text-emerald-400 font-bold">&lt; 380 ms</span>
+          </div>
+        </div>
+      )
     },
     {
-      stepNum: '05',
-      title: 'CRM Sync & Sale Closed',
-      short: 'Step 5: Sales Closed',
-      description: 'Automatic webhook dispatches structured call outcome, encrypted recording access, and updated lead state to your CRM.',
-      badge: 'Instant CRM Sync',
-      preview: {
-        title: 'CRM Webhook Status',
-        items: [
-          { label: 'Target System', value: 'HubSpot / LeadSquared' },
-          { label: 'Audio Record', value: 'Encrypted Stream Link' },
-          { label: 'Lead State', value: 'QUALIFIED_SALES_READY' },
-          { label: 'Response Code', value: 'HTTP 200 OK (0.4s)' }
-        ]
-      }
+      id: 5,
+      icon: <BarChart3 className="w-[36px] h-[36px] text-[#0A0A0A]" />,
+      title: 'Review results in CRM',
+      description:
+        'Track call summaries, sentiment scores, and outcome analytics instantly synced with your CRM.',
+      gradient: 'from-amber-100 via-orange-100 to-amber-200',
+      mockup: (
+        <div className="w-full h-full bg-white rounded-[8px] p-4 font-outfit text-xs space-y-3 border border-slate-200 shadow-lg overflow-hidden">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+            <span className="font-bold text-sm text-[#0A0A0A]">Analytics & Performance Report</span>
+            <button className="text-[10px] text-slate-600 border border-slate-200 rounded px-2 py-0.5 flex items-center space-x-1">
+              <span>Export CSV</span>
+              <ArrowUpRight className="w-3 h-3" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-4 gap-2 text-center">
+            <div className="p-2 bg-slate-50 border border-slate-200 rounded">
+              <div className="text-[8px] text-slate-500">Total Calls</div>
+              <div className="font-bold text-sm text-slate-900">1,284</div>
+            </div>
+            <div className="p-2 bg-slate-50 border border-slate-200 rounded">
+              <div className="text-[8px] text-slate-500">Talk Time</div>
+              <div className="font-bold text-sm text-slate-900">78h</div>
+            </div>
+            <div className="p-2 bg-slate-50 border border-slate-200 rounded">
+              <div className="text-[8px] text-slate-500">CSAT Score</div>
+              <div className="font-bold text-sm text-emerald-600">94%</div>
+            </div>
+            <div className="p-2 bg-slate-50 border border-slate-200 rounded">
+              <div className="text-[8px] text-slate-500">ROI Impact</div>
+              <div className="font-bold text-sm text-amber-600">4.2x</div>
+            </div>
+          </div>
+        </div>
+      )
     }
   ];
 
-  const currentStep = steps[activeStep];
-
   return (
-    <section id="workflow" className="py-24 bg-slate-50 border-b border-slate-200 text-slate-900">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        
-        {/* Header */}
-        <div className="text-center max-w-3xl mx-auto mb-16 space-y-3">
-          <span className="text-xs font-bold font-mono uppercase tracking-widest text-amber-800 px-3.5 py-1.5 rounded-full bg-amber-50 border border-amber-200">
-            End-to-End Workflow Timeline
-          </span>
-          <h2 className="text-3xl sm:text-5xl font-black tracking-tight text-slate-900 font-display uppercase leading-tight">
-            FROM LEAD TO RENEWAL.<br />
-            <span className="text-amber-500 font-display uppercase block mt-1">Every Call Automated.</span>
+    <section className="w-full bg-white py-[60px] px-6 sm:px-[40px] lg:px-[60px] border-b border-neutral-200">
+      <div className="max-w-[1320px] mx-auto space-y-10">
+
+        {/* Section Headline Block */}
+        <div className="space-y-3 max-w-[808px]">
+          <h2 className="font-outfit font-normal text-3xl sm:text-4xl lg:text-[48px] leading-[1.2] text-[#0A0A0A] tracking-tight">
+            From Zero to Calling in Minutes
           </h2>
-          <p className="text-slate-600 text-base sm:text-lg">
-            A continuous automated pipeline that qualifies leads, executes calls, queries knowledge, and syncs results to your CRM.
+          <p className="font-outfit font-normal text-base sm:text-[20px] leading-[26px] sm:leading-[30px] text-[#6D8A96] max-w-[808px] min-h-[60px]">
+            Set up your sales agent, connect your leads, and launch your first campaign without building complicated automation.
           </p>
         </div>
 
-        {/* Timeline Steps Header Bar */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-10">
-          {steps.map((s, idx) => {
-            const isActive = activeStep === idx;
-            return (
-              <button
-                key={idx}
-                onClick={() => setActiveStep(idx)}
-                className={`p-4 rounded-xl border text-left transition-all ${
-                  isActive
-                    ? 'bg-white border-amber-500 shadow-md shadow-amber-500/10 ring-2 ring-amber-500/20'
-                    : 'bg-white/60 border-slate-200 hover:border-slate-300 hover:bg-white'
-                }`}
+        {/* 5 Overlapping Cards Track (Aligned perfectly with title margin) */}
+        <div className="relative space-y-0 pb-16">
+          {steps.map((step, idx) => (
+            <div
+              key={step.id}
+              style={{
+                position: 'sticky',
+                top: '120px',
+                zIndex: (idx + 1) * 10,
+              }}
+              className="w-full max-w-[1320px] bg-white py-[24px] lg:py-[32px] flex flex-col lg:flex-row items-center justify-between gap-[36px] lg:gap-[50px] rounded-[24px] overflow-hidden transition-all duration-300"
+            >
+              {/* 1. Left Image / Gradient Card (760px x 460px) */}
+              <div
+                className={`w-full lg:w-[760px] h-[360px] sm:h-[420px] lg:h-[460px] rounded-[20px] bg-gradient-to-br ${step.gradient} p-5 sm:p-[32px] flex items-center justify-center shadow-sm relative overflow-hidden flex-shrink-0`}
               >
-                <div className="flex items-center justify-between mb-2">
-                  <span className={`text-xs font-mono font-bold ${isActive ? 'text-amber-600' : 'text-slate-400'}`}>
-                    STEP {s.stepNum}
-                  </span>
-                  {isActive && <CheckCircle2 className="w-4 h-4 text-amber-500" />}
+                {/* 2. Inner Dashboard UI Card */}
+                <div className="w-full lg:w-[680px] h-[300px] sm:h-[350px] lg:h-[390px] rounded-[12px] bg-white border border-white/80 shadow-2xl overflow-hidden p-2 sm:p-4">
+                  {step.mockup}
                 </div>
-                <div className={`text-sm font-bold leading-snug ${isActive ? 'text-slate-900' : 'text-slate-700'}`}>
-                  {s.title}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Active Timeline Inspector Panel */}
-        <div className="rounded-2xl bg-white border border-slate-200 p-6 lg:p-8 shadow-xl shadow-slate-200/50">
-          <div className="grid lg:grid-cols-12 gap-8 items-center">
-            
-            {/* Left Description */}
-            <div className="lg:col-span-6 space-y-5">
-              <div className="flex items-center space-x-2">
-                <span className="text-xs font-mono font-bold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1 rounded-full">
-                  PHASE {currentStep.stepNum} OF 05
-                </span>
-                <span className="text-xs text-slate-500 font-semibold">• {currentStep.badge}</span>
               </div>
 
-              <h3 className="text-2xl font-extrabold text-slate-900">
-                {currentStep.title}
-              </h3>
+              {/* 3. Right Text Content Block (480px) */}
+              <div className="w-full lg:w-[480px] flex flex-col justify-center gap-[16px]">
+                {/* Icon */}
+                <div className="shrink-0">{step.icon}</div>
 
-              <p className="text-slate-600 text-sm sm:text-base leading-relaxed">
-                {currentStep.description}
-              </p>
+                {/* Title */}
+                <h3 className="font-outfit font-normal text-2xl sm:text-[32px] leading-[40px] text-[#0A0A0A] tracking-tight">
+                  {step.title}
+                </h3>
 
-              <div className="pt-2 flex items-center space-x-3">
-                <button
-                  disabled={activeStep === 0}
-                  onClick={() => setActiveStep((prev) => Math.max(0, prev - 1))}
-                  className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 font-semibold text-xs disabled:opacity-40 hover:bg-slate-50"
-                >
-                  Previous Step
-                </button>
-
-                <button
-                  disabled={activeStep === steps.length - 1}
-                  onClick={() => setActiveStep((prev) => Math.min(steps.length - 1, prev + 1))}
-                  className="px-5 py-2 rounded-lg bg-amber-500 text-white font-bold text-xs shadow hover:bg-amber-600 disabled:opacity-40 flex items-center space-x-1"
-                >
-                  <span>Next Step</span>
-                  <ChevronRight className="w-4 h-4" />
-                </button>
+                {/* Description */}
+                <p className="font-outfit font-normal text-base sm:text-[18px] leading-[28px] text-[#6D8A96]">
+                  {step.description}
+                </p>
               </div>
+
             </div>
-
-            {/* Right Card Inspection Details */}
-            <div className="lg:col-span-6">
-              <div className="rounded-xl bg-slate-50 border border-slate-200 p-5 space-y-3">
-                <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-                  <span className="text-xs font-bold text-slate-800">{currentStep.preview.title}</span>
-                  <span className="text-[11px] font-mono text-emerald-700 font-semibold bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded">
-                    Active System Status
-                  </span>
-                </div>
-
-                <div className="space-y-2.5">
-                  {currentStep.preview.items.map((item, i) => (
-                    <div key={i} className="flex items-center justify-between py-1.5 border-b border-slate-200/60 last:border-0 text-xs sm:text-sm">
-                      <span className="text-slate-600 font-medium">{item.label}</span>
-                      <span className="font-mono font-bold text-slate-900 bg-white px-2.5 py-1 rounded border border-slate-200">
-                        {item.value}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-          </div>
+          ))}
         </div>
 
       </div>

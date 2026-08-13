@@ -1,86 +1,173 @@
 'use client';
 
-import React from 'react';
-import { ShieldCheck, Lock, Award, Server, Key, CheckCircle2 } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Award, ShieldCheck, Lock, Server, Key } from 'lucide-react';
 
 export const ComplianceGridSection: React.FC = () => {
-  const standards = [
-    {
-      icon: Award,
-      title: 'SOC2 & ISO 27001 Ready',
-      description: 'Built following SOC2 Type II trust principles and ISO 27001 data security standards.',
-      badge: 'Certified Architecture',
-    },
-    {
-      icon: ShieldCheck,
-      title: 'DND & TRAI Compliance',
-      description: 'Real-time checking against national Do-Not-Call databases prior to dialer queue execution.',
-      badge: 'TRAI Compliant',
-    },
-    {
-      icon: Lock,
-      title: '256-Bit SSL Encryption',
-      description: 'All audio streams and data payloads are encrypted end-to-end using TLS 1.3 & AES-256.',
-      badge: 'AES-256 Bit',
-    },
-    {
-      icon: Server,
-      title: '99.99% Telephony Uptime SLA',
-      description: 'Redundant cloud node clusters ensure active telephony calls remain connected with zero downtime.',
-      badge: 'High Availability',
-    },
-    {
-      icon: Key,
-      title: 'Role-Based Access Control',
-      description: 'Granular permissions for Business Owners, Campaign Managers, and Auditor roles.',
-      badge: 'RBAC Enforced',
-    },
-  ];
+  const [isVisible, setIsVisible] = useState(false);
+  const sectionRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+        }
+      },
+      { threshold: 0.60}
+    );
+
+    if (sectionRef.current) {
+      observer.observe(sectionRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, []);
 
   return (
-    <section className="py-20 bg-slate-50 border-b border-slate-200 text-slate-900">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        
-        {/* Header */}
-        <div className="text-center max-w-3xl mx-auto mb-14 space-y-3">
-          <span className="text-xs font-bold font-mono uppercase tracking-widest text-blue-600 px-3.5 py-1.5 rounded-full bg-blue-50 border border-blue-200">
-            Enterprise Security Standards
-          </span>
-          <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900">
+    <section
+      id="security"
+      ref={sectionRef}
+      className="w-full bg-white text-[#0A0A0A] py-[60px] font-outfit border-b border-neutral-200 overflow-hidden"
+    >
+      <div className="max-w-[1440px] px-6 sm:px-10 lg:px-[60px] mx-auto min-h-[640px] lg:min-h-[760px] flex flex-col lg:flex-row items-center justify-between gap-12 lg:gap-[48px]">
+
+        {/* 1. Left Text Column (Width: 585px, Height: 250px) */}
+        <div className="w-full lg:max-w-[540px] space-y-4">
+          <h2 className="text-3xl sm:text-5xl lg:text-[60px] font-normal leading-tight lg:leading-[72px] tracking-[-0.02em] text-[#0A0A0A]">
             Built to the Highest Standard.
           </h2>
-          <p className="text-slate-600 text-sm sm:text-base">
+          <p className="max-w-[460px] text-base sm:text-lg lg:text-[20px] font-normal leading-relaxed lg:leading-[30px] text-[#6D8A96]">
             Enterprise-grade security controls designed for regulated insurance, banking, and healthcare operations.
           </p>
         </div>
 
-        {/* 5 Grid Cards */}
-        <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-5">
-          {standards.map((s, idx) => {
-            const Icon = s.icon;
-            return (
-              <div
-                key={idx}
-                className="p-5 rounded-2xl bg-white border border-slate-200 hover:border-slate-300 transition-all shadow-sm flex flex-col justify-between"
-              >
-                <div>
-                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-blue-600 w-fit mb-4">
-                    <Icon className="w-5 h-5" />
-                  </div>
-                  <h3 className="text-sm font-bold text-slate-900 mb-2 leading-snug">{s.title}</h3>
-                  <p className="text-xs text-slate-600 leading-relaxed">{s.description}</p>
-                </div>
+        {/* 2. Right Column: Staggered 3-Column Security Cards with Scroll Slide-Up */}
+        <div className="w-full lg:w-[780px] grid grid-cols-1 sm:grid-cols-3 gap-5 lg:gap-6 items-center justify-items-center">
 
-                <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[10px] font-mono text-blue-600 font-semibold">
-                  <span>{s.badge}</span>
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                </div>
+          {/* Column 1: Top & Bottom Cards */}
+          <div className="space-y-5 lg:space-y-6 flex flex-col justify-between h-full w-full items-center">
+            {/* Card 1: SOC2 & ISO 27001 */}
+            <div
+              className="w-full sm:w-[230px] lg:w-[240px] min-h-[280px] bg-white rounded-[16px] p-5 lg:p-6 border border-neutral-200/80 shadow-[0_25px_50px_-12px_rgba(0,0,0,0.28),0_10px_20px_-8px_rgba(0,0,0,0.18)] flex flex-col justify-between"
+              style={{
+                transform: isVisible ? 'translateY(0px)' : 'translateY(50px)',
+                opacity: isVisible ? 1 : 0,
+                transition: 'transform 600ms cubic-bezier(0.16, 1, 0.3, 1) 100ms, opacity 600ms ease 100ms',
+              }}
+            >
+              <div className="w-[42px] h-[42px] rounded-[8px] border border-[#D4D4D4] p-2 flex items-center justify-center text-[#6D8A96]">
+                <Award className="w-5 h-5" />
               </div>
-            );
-          })}
+              <div className="space-y-2 mt-4">
+                <h3 className="text-lg lg:text-[20px] font-normal leading-[30px] text-[#0A0A0A]">
+                  SOC2 & ISO 27001 Ready
+                </h3>
+                <p className="text-sm lg:text-[16px] font-normal leading-[24px] text-[#6D8A96]">
+                  Built following SOC2 Type II trust principles and ISO 27001 data security standards.
+                </p>
+              </div>
+            </div>
+
+            {/* Card 2: DND & TRAI Compliance */}
+            <div
+              className="w-full sm:w-[230px] lg:w-[240px] min-h-[280px] bg-white rounded-[16px] p-5 lg:p-6 border border-neutral-200/80 shadow-[0_25px_50px_-12px_rgba(0,0,0,0.28),0_10px_20px_-8px_rgba(0,0,0,0.18)] flex flex-col justify-between"
+              style={{
+                transform: isVisible ? 'translateY(0px)' : 'translateY(50px)',
+                opacity: isVisible ? 1 : 0,
+                transition: 'transform 600ms cubic-bezier(0.16, 1, 0.3, 1) 200ms, opacity 600ms ease 200ms',
+              }}
+            >
+              <div className="w-[42px] h-[42px] rounded-[8px] border border-[#D4D4D4] p-2 flex items-center justify-center text-[#6D8A96]">
+                <ShieldCheck className="w-5 h-5" />
+              </div>
+              <div className="space-y-2 mt-4">
+                <h3 className="text-lg lg:text-[20px] font-normal leading-[30px] text-[#0A0A0A]">
+                  DND & TRAI Compliance
+                </h3>
+                <p className="text-sm lg:text-[16px] font-normal leading-[24px] text-[#6D8A96]">
+                  Real-time checking against national Do-Not-Call databases prior to dialer queue execution.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Column 2: Center Offset Card */}
+          <div className="flex items-center justify-center h-full w-full">
+            {/* Card 3: 256-Bit SSL Encryption */}
+            <div
+              className="w-full sm:w-[230px] lg:w-[240px] min-h-[280px] bg-white rounded-[16px] p-5 lg:p-6 border border-neutral-200/80 shadow-[0_25px_50px_-12px_rgba(0,0,0,0.28),0_10px_20px_-8px_rgba(0,0,0,0.18)] flex flex-col justify-between"
+              style={{
+                transform: isVisible ? 'translateY(0px)' : 'translateY(50px)',
+                opacity: isVisible ? 1 : 0,
+                transition: 'transform 600ms cubic-bezier(0.16, 1, 0.3, 1) 300ms, opacity 600ms ease 300ms',
+              }}
+            >
+              <div className="w-[42px] h-[42px] rounded-[8px] border border-[#D4D4D4] p-2 flex items-center justify-center text-[#6D8A96]">
+                <Lock className="w-5 h-5" />
+              </div>
+              <div className="space-y-2 mt-4">
+                <h3 className="text-lg lg:text-[20px] font-normal leading-[30px] text-[#0A0A0A]">
+                  256-Bit SSL Encryption
+                </h3>
+                <p className="text-sm lg:text-[16px] font-normal leading-[24px] text-[#6D8A96]">
+                  All audio streams and data payloads are encrypted end-to-end using TLS 1.3 & AES-256.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Column 3: Top & Bottom Cards */}
+          <div className="space-y-5 lg:space-y-6 flex flex-col justify-between h-full w-full items-center">
+            {/* Card 4: 99.99% Uptime SLA */}
+            <div
+              className="w-full sm:w-[230px] lg:w-[240px] min-h-[280px] bg-white rounded-[16px] p-5 lg:p-6 border border-neutral-200/80 shadow-[0_25px_50px_-12px_rgba(0,0,0,0.28),0_10px_20px_-8px_rgba(0,0,0,0.18)] flex flex-col justify-between"
+              style={{
+                transform: isVisible ? 'translateY(0px)' : 'translateY(50px)',
+                opacity: isVisible ? 1 : 0,
+                transition: 'transform 600ms cubic-bezier(0.16, 1, 0.3, 1) 400ms, opacity 600ms ease 400ms',
+              }}
+            >
+              <div className="w-[42px] h-[42px] rounded-[8px] border border-[#D4D4D4] p-2 flex items-center justify-center text-[#6D8A96]">
+                <Server className="w-5 h-5" />
+              </div>
+              <div className="space-y-2 mt-4">
+                <h3 className="text-lg lg:text-[20px] font-normal leading-[30px] text-[#0A0A0A]">
+                  99.99% Telephony Uptime SLA
+                </h3>
+                <p className="text-sm lg:text-[16px] font-normal leading-[24px] text-[#6D8A96]">
+                  Redundant cloud node clusters ensure active telephony calls remain connected with zero downtime.
+                </p>
+              </div>
+            </div>
+
+            {/* Card 5: Role-Based Access Control */}
+            <div
+              className="w-full sm:w-[230px] lg:w-[240px] min-h-[280px] bg-white rounded-[16px] p-5 lg:p-6 border border-neutral-200/80 shadow-[0_25px_50px_-12px_rgba(0,0,0,0.28),0_10px_20px_-8px_rgba(0,0,0,0.18)] flex flex-col justify-between"
+              style={{
+                transform: isVisible ? 'translateY(0px)' : 'translateY(50px)',
+                opacity: isVisible ? 1 : 0,
+                transition: 'transform 600ms cubic-bezier(0.16, 1, 0.3, 1) 500ms, opacity 600ms ease 500ms',
+              }}
+            >
+              <div className="w-[42px] h-[42px] rounded-[8px] border border-[#D4D4D4] p-2 flex items-center justify-center text-[#6D8A96]">
+                <Key className="w-5 h-5" />
+              </div>
+              <div className="space-y-2 mt-4">
+                <h3 className="text-lg lg:text-[20px] font-normal leading-[30px] text-[#0A0A0A]">
+                  Role-Based Access Control
+                </h3>
+                <p className="text-sm lg:text-[16px] font-normal leading-[24px] text-[#6D8A96]">
+                  Granular permissions for Business Owners, Campaign Managers, and Auditor roles.
+                </p>
+              </div>
+            </div>
+          </div>
+
         </div>
 
       </div>
     </section>
   );
 };
+

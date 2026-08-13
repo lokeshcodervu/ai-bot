@@ -51,10 +51,30 @@ def login_user(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = D
         },
         expires_delta=timedelta(days=7)
     )
+    tenant_info = None
+    if user.tenant:
+        ver_stat = user.tenant.verification_status.value if hasattr(user.tenant.verification_status, "value") else str(user.tenant.verification_status)
+        tenant_info = {
+            "id": str(user.tenant.id),
+            "company_name": user.tenant.company_name,
+            "country": user.tenant.country or "INDIA",
+            "verification_status": ver_stat,
+            "rejection_reason": user.tenant.rejection_reason,
+            "is_active": user.tenant.is_active
+        }
+
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,
-        "token_type": "bearer"
+        "token_type": "bearer",
+        "user": {
+            "id": str(user.id),
+            "username": user.username,
+            "email": user.email,
+            "full_name": user.full_name,
+            "role": user.role.value if hasattr(user.role, "value") else str(user.role)
+        },
+        "tenant": tenant_info
     }
 
 @router.post("/refresh", response_model=Token)
@@ -206,21 +226,34 @@ def get_me(
 ):
     """Retrieve current logged in user profile with tenant verification state."""
     tenant_info = None
+    verification_info = None
+
     if current_user.tenant:
+        ver_stat = current_user.tenant.verification_status.value if hasattr(current_user.tenant.verification_status, "value") else str(current_user.tenant.verification_status)
         tenant_info = {
             "id": current_user.tenant.id,
             "company_name": current_user.tenant.company_name,
-            "country": current_user.tenant.country or "India",
+            "country": current_user.tenant.country or "INDIA",
             "company_email": current_user.tenant.company_email,
             "company_phone": current_user.tenant.company_phone,
             "company_number": current_user.tenant.company_number,
             "registered_address": current_user.tenant.registered_address,
             "owner_name": current_user.tenant.owner_name,
-            "verification_status": current_user.tenant.verification_status,
+            "verification_status": ver_stat,
             "verification_doc_url": current_user.tenant.verification_doc_url,
             "rejection_reason": current_user.tenant.rejection_reason,
+            "submitted_at": current_user.tenant.submitted_at,
+            "verified_at": current_user.tenant.verified_at,
             "allowed_modules": current_user.tenant.allowed_modules,
             "is_active": current_user.tenant.is_active
+        }
+        verification_info = {
+            "status": ver_stat,
+            "country": current_user.tenant.country or "INDIA",
+            "company_name": current_user.tenant.company_name,
+            "rejection_reason": current_user.tenant.rejection_reason,
+            "submitted_at": current_user.tenant.submitted_at,
+            "verified_at": current_user.tenant.verified_at
         }
 
     return {
@@ -229,7 +262,8 @@ def get_me(
         "email": current_user.email,
         "full_name": current_user.full_name,
         "role": current_user.role,
-        "tenant": tenant_info
+        "tenant": tenant_info,
+        "verification": verification_info
     }
 
 @dashboard_router.get("")

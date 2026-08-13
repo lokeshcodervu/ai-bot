@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "TeleBot AI — Enterprise Autonomous Voice Telephony",
+  title: "Closr AI — Enterprise Autonomous Voice Telephony",
   description: "Automate manual telecalling for sales, insurance & counseling with ultra-low latency streaming voice AI and verified knowledge.",
 };
 

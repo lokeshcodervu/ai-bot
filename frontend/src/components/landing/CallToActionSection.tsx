@@ -19,7 +19,7 @@ export const CallToActionSection: React.FC<CallToActionSectionProps> = ({ onOpen
     <section className="py-20 bg-white text-slate-900 relative">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="rounded-3xl bg-gradient-to-br from-amber-500 via-amber-600 to-orange-600 border border-amber-500 p-8 sm:p-12 lg:p-16 text-center space-y-8 text-white shadow-xl shadow-amber-500/20 relative overflow-hidden">
-          
+
           {/* Top Tagline */}
           <div className="inline-flex items-center space-x-2 px-4 py-1.5 rounded-full bg-black/20 border border-white/20 text-white text-xs font-bold uppercase tracking-widest">
             <span>Launch Your Voice AI Telephony Agent Today</span>
@@ -27,7 +27,7 @@ export const CallToActionSection: React.FC<CallToActionSectionProps> = ({ onOpen
 
           {/* Headline matching image style */}
           <h2 className="text-3xl sm:text-5xl font-black tracking-tight leading-tight text-white font-display uppercase">
-            SEE TELEBOT AI HANDLE<br />
+            SEE Closr AI HANDLE<br />
             <span className="text-amber-100 font-display uppercase block mt-1">Your Telecalling & Sales Ops.</span>
           </h2>
 

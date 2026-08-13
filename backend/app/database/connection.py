@@ -134,4 +134,71 @@ def seed_default_plans():
         db.rollback()
     finally:
         db.close()
+def apply_database_migrations(target_engine=None):
+    """
+    Safely inspect and add missing verification columns & audit table.
+    Migrates existing active/verified tenants to APPROVED so existing accounts remain fully functional.
+    """
+    if target_engine is None:
+        target_engine = engine
 
+    with target_engine.connect() as conn:
+        dialect_name = target_engine.dialect.name
+        
+        # 1. Tenants table columns check
+        tenant_columns = []
+        if dialect_name == "sqlite":
+            res = conn.execute(text("PRAGMA table_info(tenants)"))
+            tenant_columns = [row[1] for row in res.fetchall()]
+        elif dialect_name == "postgresql":
+            res = conn.execute(text("SELECT column_name FROM information_schema.columns WHERE table_name='tenants'"))
+            tenant_columns = [row[0] for row in res.fetchall()]
+
+        if tenant_columns:
+            if "country" not in tenant_columns:
+                conn.execute(text("ALTER TABLE tenants ADD COLUMN country VARCHAR(100) DEFAULT 'INDIA'"))
+            if "verified_at" not in tenant_columns:
+                conn.execute(text("ALTER TABLE tenants ADD COLUMN verified_at TIMESTAMP"))
+            if "verified_by" not in tenant_columns:
+                if dialect_name == "postgresql":
+                    conn.execute(text("ALTER TABLE tenants ADD COLUMN verified_by UUID"))
+                else:
+                    conn.execute(text("ALTER TABLE tenants ADD COLUMN verified_by VARCHAR(36)"))
+            if "submitted_at" not in tenant_columns:
+                conn.execute(text("ALTER TABLE tenants ADD COLUMN submitted_at TIMESTAMP"))
+
+        # 2. Documents table columns check
+        doc_columns = []
+        if dialect_name == "sqlite":
+            res = conn.execute(text("PRAGMA table_info(documents)"))
+            doc_columns = [row[1] for row in res.fetchall()]
+        elif dialect_name == "postgresql":
+            res = conn.execute(text("SELECT column_name FROM information_schema.columns WHERE table_name='documents'"))
+            doc_columns = [row[0] for row in res.fetchall()]
+
+        if doc_columns:
+            if "document_type" not in doc_columns:
+                conn.execute(text("ALTER TABLE documents ADD COLUMN document_type VARCHAR(100)"))
+            if "mime_type" not in doc_columns:
+                conn.execute(text("ALTER TABLE documents ADD COLUMN mime_type VARCHAR(100)"))
+            if "file_size" not in doc_columns:
+                conn.execute(text("ALTER TABLE documents ADD COLUMN file_size BIGINT"))
+            if "uploaded_by" not in doc_columns:
+                if dialect_name == "postgresql":
+                    conn.execute(text("ALTER TABLE documents ADD COLUMN uploaded_by UUID"))
+                else:
+                    conn.execute(text("ALTER TABLE documents ADD COLUMN uploaded_by VARCHAR(36)"))
+            if "verification_status" not in doc_columns:
+                conn.execute(text("ALTER TABLE documents ADD COLUMN verification_status VARCHAR(50) DEFAULT 'PENDING'"))
+
+        # 3. Existing tenants migration strategy: Set active/verified existing tenants to APPROVED
+        if tenant_columns:
+            try:
+                if dialect_name == "postgresql":
+                    conn.execute(text("UPDATE tenants SET verification_status = 'APPROVED' WHERE (is_active = TRUE OR is_verified = TRUE) AND (submitted_at IS NULL OR verification_status = 'PENDING')"))
+                else:
+                    conn.execute(text("UPDATE tenants SET verification_status = 'APPROVED' WHERE (is_active = 1 OR is_verified = 1) AND (submitted_at IS NULL OR verification_status = 'PENDING')"))
+            except Exception as e:
+                print(f"[MIGRATION WARNING] Could not set existing tenants to APPROVED: {e}")
+
+        conn.commit()

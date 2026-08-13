@@ -20,7 +20,9 @@ from app.schemas.lead_schema import (
 router = APIRouter(prefix="/leads", tags=["Leads"])
 
 def require_payment(current_user: User = Depends(auth_controller.get_current_user)):
-    """Gate checks to ensure tenant has active payment done before accessing leads API."""
+    """Gate checks to ensure tenant has active payment done before accessing leads API. Super Admin bypasses."""
+    if current_user.role == UserRole.SUPER_ADMIN:
+        return current_user
     if not current_user.tenant or not current_user.tenant.is_payment_done:
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
@@ -54,10 +56,10 @@ def download_csv_template(
 @router.post("/upload-preview")
 def upload_csv_preview(
     file: UploadFile = File(...),
-    current_user: User = Depends(require_payment)
+    current_user: User = Depends(auth_controller.require_approved_company)
 ):
     """
-    Upload CSV file and parse first 5 rows to return headers and row values preview.
+    Upload CSV file and parse first 5 rows to return headers and row values preview. Requires APPROVED company.
     """
     if not file.filename.lower().endswith(".csv"):
         raise HTTPException(
@@ -112,17 +114,28 @@ def upload_csv_preview(
 def import_leads_endpoint(
     request_in: LeadImportRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_payment)
+    current_user: User = Depends(auth_controller.require_approved_company)
 ):
     """
-    Bulk import leads with phone format and email validation.
+    Bulk import leads with phone format and email validation. Requires APPROVED company.
     """
     tenant_id = current_user.tenant_id
     if not tenant_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User is not associated with any tenant workspace."
-        )
+        if current_user.role == UserRole.SUPER_ADMIN:
+            from app.models.tenant import Tenant
+            first_tenant = db.query(Tenant).first()
+            if first_tenant:
+                tenant_id = first_tenant.id
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="No tenant workspace available in system to import leads into."
+                )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="User is not associated with any tenant workspace."
+            )
         
     result = lead_controller.import_leads(db, tenant_id, request_in.leads)
     return result
@@ -137,10 +150,13 @@ def get_leads_endpoint(
     current_user: User = Depends(require_payment)
 ):
     """
-    List and search leads scoped to the tenant workspace.
+    List and search leads scoped to the tenant workspace (or all leads for Super Admin).
     """
     tenant_id = current_user.tenant_id
     if not tenant_id:
+        if current_user.role == UserRole.SUPER_ADMIN:
+            from app.models.lead import Lead
+            return db.query(Lead).offset(skip).limit(limit).all()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="User is not associated with any tenant workspace."
@@ -159,6 +175,8 @@ def get_kanban_leads_endpoint(
     """
     tenant_id = current_user.tenant_id
     if not tenant_id:
+        if current_user.role == UserRole.SUPER_ADMIN:
+            return {"columns": {}}
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="User is not associated with any tenant workspace."
@@ -172,10 +190,10 @@ def update_lead_status_endpoint(
     lead_id: UUID,
     request_in: LeadStatusUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_payment)
+    current_user: User = Depends(auth_controller.require_approved_company)
 ):
     """
-    Update lead status (e.g. on Kanban board drag & drop).
+    Update lead status (e.g. on Kanban board drag & drop). Requires APPROVED company.
     """
     tenant_id = current_user.tenant_id
     if not tenant_id:

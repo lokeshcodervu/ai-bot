@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Search, ShieldAlert, Play, Sparkles, ArrowLeft, Download } from 'lucide-react';
+import { Search, ShieldAlert, Play, Sparkles, ArrowLeft, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useStore } from '../../store';
 import API_BASE from '../../../config/api';
 
@@ -28,6 +28,10 @@ export default function CallLogsPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedLog, setSelectedLog] = useState<CallLogItem | null>(null);
+
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const ITEMS_PER_PAGE = 15;
 
   const getAudioSource = (url?: string) => {
     if (!url) return "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3";
@@ -165,7 +169,13 @@ export default function CallLogsPage() {
     }
 
     setDisplayedLogs(filtered);
+    setCurrentPage(1);
   }, [searchQuery, selectedDisposition, logs]);
+
+  // Pagination calculation
+  const totalPages = Math.ceil(displayedLogs.length / ITEMS_PER_PAGE) || 1;
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const paginatedLogs = displayedLogs.slice(startIndex, startIndex + ITEMS_PER_PAGE);
 
   // Render Disposition Pill matching Frame 281 Specs
   const getDispositionBadge = (disposition: string) => {
@@ -466,7 +476,7 @@ export default function CallLogsPage() {
                     </div>
                   </td>
                 </tr>
-              ) : displayedLogs.map((log) => (
+              ) : paginatedLogs.map((log) => (
                 <tr key={log.id} className="table-row">
                   <td className="table-td">
                     {log.leadName}
@@ -508,6 +518,56 @@ export default function CallLogsPage() {
             </tbody>
           </table>
         </div>
+
+        {/* PAGINATION CONTROL FOOTER */}
+        {!isLoading && !error && displayedLogs.length > 0 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-6 py-4 bg-white border-t border-[#E5E5E5] rounded-b-2xl font-outfit">
+            <div className="text-xs font-normal text-slate-500">
+              Showing <span className="font-semibold text-slate-900">{startIndex + 1}</span> to{' '}
+              <span className="font-semibold text-slate-900">
+                {Math.min(startIndex + ITEMS_PER_PAGE, displayedLogs.length)}
+              </span>{' '}
+              of <span className="font-semibold text-slate-900">{displayedLogs.length}</span> call logs
+            </div>
+
+            <div className="flex items-center space-x-1.5">
+              <button
+                type="button"
+                onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-1.5 rounded-lg border border-[#D4D4D4] text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-all flex items-center gap-1"
+              >
+                <ChevronLeft className="w-4 h-4 text-slate-500" />
+                Previous
+              </button>
+
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
+                <button
+                  key={pageNum}
+                  type="button"
+                  onClick={() => setCurrentPage(pageNum)}
+                  className={`w-8 h-8 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                    currentPage === pageNum
+                      ? 'bg-[#18181B] text-white font-bold shadow-2xs'
+                      : 'border border-[#D4D4D4] text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  {pageNum}
+                </button>
+              ))}
+
+              <button
+                type="button"
+                onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                disabled={currentPage === totalPages || totalPages === 0}
+                className="px-3 py-1.5 rounded-lg border border-[#D4D4D4] text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-all flex items-center gap-1"
+              >
+                Next
+                <ChevronRight className="w-4 h-4 text-slate-500" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
     </div>

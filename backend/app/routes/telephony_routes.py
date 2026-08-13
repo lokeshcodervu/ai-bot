@@ -261,7 +261,7 @@ def call_single_lead(
     lead_id: UUID,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(auth_controller.get_current_user)
+    current_user: User = Depends(auth_controller.require_approved_company)
 ):
     """
     Trigger an outbound call to a single lead immediately.

@@ -461,13 +461,13 @@ export default function LiveMonitorPage() {
                       }`}>
                         {isBot ? (
                           <>
-                            <span className="flex h-1.5 w-1.5 rounded-full bg-indigo-500 inline-block animate-pulse" />
+                            <span className="inline-block h-1.5 w-1.5 rounded-full bg-indigo-500 animate-pulse" />
                             <Bot className="h-3 w-3" />
                             <span>Real AI Bot</span>
                           </>
                         ) : (
                           <>
-                            <span className="flex h-1.5 w-1.5 rounded-full bg-slate-400 inline-block" />
+                            <span className="inline-block h-1.5 w-1.5 rounded-full bg-slate-400" />
                             <User className="h-3 w-3" />
                             <span>User Answer</span>
                           </>

@@ -8,8 +8,9 @@ from sqlalchemy.orm import sessionmaker
 from uuid import UUID
 
 from app.main import app
-from app.database.connection import get_db, Base
+from app.database.connection import get_db, Base, apply_database_migrations
 from app.models import User, Tenant, Subscription, Payment, Plan, OTPVerification, SubscriptionStatus, PaymentStatus, Lead, LeadStatus, Campaign, CampaignStatus, BlacklistedNumber, Wallet, BlacklistedToken
+from app.models.tenant import TenantVerificationStatus
 
 TEST_DATABASE_URL = "sqlite:///./test_redesigned.db"
 test_engine = create_engine(TEST_DATABASE_URL, connect_args={"check_same_thread": False})
@@ -22,6 +23,15 @@ def override_get_db():
     finally:
         db.close()
 
+def approve_tenant_in_db(email: str):
+    db = TestingSessionLocal()
+    user = db.query(User).filter(User.email == email).first()
+    if user and user.tenant:
+        user.tenant.verification_status = TenantVerificationStatus.APPROVED
+        user.tenant.is_active = True
+        user.tenant.is_verified = True
+        db.commit()
+    db.close()
 
 def seed_test_plans(db):
     plans_data = [
@@ -226,6 +236,11 @@ def test_onboarding_lifecycle(client):
     assert db_tenant.is_payment_done is True
     assert db_tenant.is_active is True
     db.close()
+    
+    # Create Payment Order
+    create_order_res = client.post("/api/v1/onboarding/create-payment", json={"gateway": "stripe"}, headers=headers)
+    assert create_order_res.status_code == 200
+    order_json = create_order_res.json()
     assert order_json["gateway_order_id"] is not None
     
     payment_id = order_json["payment_id"]
@@ -627,6 +642,7 @@ def test_campaign_lifecycle(client):
     response = client.post("/api/v1/onboarding/complete", json={"verified_token": v_token_a, "card_number": "4242 4242 4242 4242"})
     access_token_a = response.json()['access_token']
     headers_a = {"Authorization": f"Bearer {access_token_a}"}
+    approve_tenant_in_db("campa@example.com")
 
     # Unpaid Tenant B
     response = client.post("/api/v1/onboarding/signup", json={"email": "campb@example.com", "password": "password123"})
@@ -637,6 +653,7 @@ def test_campaign_lifecycle(client):
     v_token_b = response.json()["verified_token"]
     response = client.post("/api/v1/onboarding/complete", json={"verified_token": v_token_b, "card_number": "4242 4242 4242 4242"})
     headers_b = {"Authorization": f"Bearer {response.json()['access_token']}"}
+    set_tenant_unpaid_in_db("campb@example.com")
 
     # Paid Tenant C (isolation checks)
     response = client.post("/api/v1/onboarding/signup", json={"email": "campc@example.com", "password": "password123"})
@@ -647,6 +664,7 @@ def test_campaign_lifecycle(client):
     v_token_c = response.json()["verified_token"]
     response = client.post("/api/v1/onboarding/complete", json={"verified_token": v_token_c, "card_number": "4242 4242 4242 4242"})
     headers_c = {"Authorization": f"Bearer {response.json()['access_token']}"}
+    approve_tenant_in_db("campc@example.com")
 
     # =========================================================
     # 2. TEST GATING
@@ -791,6 +809,7 @@ def test_live_monitoring_websockets(client):
     response = client.post("/api/v1/onboarding/complete", json={"verified_token": v_token, "card_number": "4242 4242 4242 4242"})
     access_token = response.json()['access_token']
     headers = {"Authorization": f"Bearer {access_token}"}
+    approve_tenant_in_db("livemon@example.com")
 
     # 1. Create Campaign
     campaign_res = client.post("/api/v1/campaigns", json={
@@ -859,6 +878,7 @@ def test_call_logs_and_dynamic_analytics(client):
     response = client.post("/api/v1/onboarding/complete", json={"verified_token": v_token, "card_number": "4242 4242 4242 4242"})
     access_token = response.json()['access_token']
     headers = {"Authorization": f"Bearer {access_token}"}
+    approve_tenant_in_db("analytics@example.com")
 
     # 1. Create Campaign
     campaign_res = client.post("/api/v1/campaigns", json={

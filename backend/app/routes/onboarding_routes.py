@@ -27,7 +27,8 @@ from app.schemas import (
     RegisterResponse,
     TenantCreate
 )
-from app.models import Tenant, User, UserRole, Plan, Payment, Subscription
+from app.models import Tenant, User, UserRole, Plan, Payment, Subscription, Document
+from datetime import datetime, timezone
 from app.controllers import user_controller, tenant_controller, auth_controller, otp_controller, subscription_controller, payment_controller
 from app.utils.helpers import decode_access_token, create_access_token, hash_password
 
@@ -96,13 +97,16 @@ def signup_user(user_in: UserSignup, db: Session = Depends(get_db)):
     print(f"OTP Verification Code: {otp_code} (Static OTP)")
     print(f"======================================\n")
     
+    # Determine role dynamically (use specified role if provided, otherwise default to BUSINESS_OWNER)
+    assigned_role = user_in.role.value if user_in.role else UserRole.BUSINESS_OWNER.value
+
     # Store temporary state in signup_token
     tenant_id = uuid.uuid4()
     signup_payload = {
         "username": username,
         "email": user_in.email,
         "hashed_password": hash_password(user_in.password),
-        "role": UserRole.BUSINESS_OWNER.value,
+        "role": assigned_role,
         "tenant_id": str(tenant_id),
         "company_name": f"{username.capitalize()} Workspace",
         "company_slug": slug_candidate,
@@ -120,7 +124,7 @@ def signup_user(user_in: UserSignup, db: Session = Depends(get_db)):
             "username": username,
             "email": user_in.email,
             "phone_number": None,
-            "role": UserRole.BUSINESS_OWNER
+            "role": UserRole(assigned_role)
         }
     }
 
@@ -336,39 +340,70 @@ def complete_onboarding(request_in: CompleteOnboardingRequest, db: Session = Dep
     # Start Atomic DB Transaction
     try:
         # Create Tenant
+        company_name_val = payload.get("company_name", f"{username.capitalize()} Workspace")
+        company_email_val = payload.get("company_email", email)
+        company_phone_val = payload.get("company_phone") or payload.get("phone_number") or phone_number
         tenant_create_data = TenantCreate(
-            company_name=payload["company_name"],
-            slug=payload["company_slug"],
-            company_email=email,
-            company_phone=phone_number,
+            company_name=company_name_val,
+            slug=payload.get("company_slug", slugify(username)),
+            company_email=company_email_val,
+            company_phone=company_phone_val,
             industry=industry
         )
         db_tenant = tenant_controller.create_tenant(db, tenant_create_data, tenant_id=uuid.UUID(payload["tenant_id"]))
+        db_tenant.country = payload.get("country", "INDIA")
+        if payload.get("owner_name"):
+            db_tenant.owner_name = payload.get("owner_name")
+        if payload.get("registered_address") or payload.get("registered_office_address"):
+            db_tenant.registered_address = payload.get("registered_address") or payload.get("registered_office_address")
+        if payload.get("company_number"):
+            db_tenant.company_number = payload.get("company_number")
+
+        verification_doc_url = payload.get("verification_doc_url")
+        if verification_doc_url:
+            db_tenant.verification_doc_url = verification_doc_url
+            db_tenant.verification_status = TenantVerificationStatus.PENDING
+            db_tenant.submitted_at = datetime.now(timezone.utc)
+
         db_tenant.system_prompt = baseline_prompt
         db_tenant.is_verified = True
         db_tenant.is_active = True
         db_tenant.is_payment_done = True
-        
+
         # Create User
         db_user = User(
             username=username,
             email=email,
             hashed_password=payload["hashed_password"],
             full_name=payload.get("full_name"),
-            phone_number=phone_number,
+            phone_number=company_phone_val,
             role=UserRole(payload["role"]),
             tenant_id=db_tenant.id,
             is_active=True
         )
         db.add(db_user)
-        
+
+        if verification_doc_url:
+            import os
+            doc_record = Document(
+                tenant_id=db_tenant.id,
+                file_name=os.path.basename(verification_doc_url),
+                file_url=verification_doc_url,
+                status="COMPLETED",
+                document_type="COMPANY_VERIFICATION_DOC",
+                mime_type="application/pdf" if verification_doc_url.endswith(".pdf") else "image/png",
+                uploaded_by=db_user.id,
+                verification_status="PENDING"
+            )
+            db.add(doc_record)
+
         # Create Active Subscription
         subscription_controller.create_or_update_subscription(
             db=db,
             tenant_id=db_tenant.id,
             plan_id=selected_plan
         )
-        
+
         # Commit Transaction
         db.commit()
         db.refresh(db_user)

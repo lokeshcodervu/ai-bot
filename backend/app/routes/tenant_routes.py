@@ -1,6 +1,6 @@
 # routes/tenant_routes.py
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, BackgroundTasks, Header
 from sqlalchemy.orm import Session
 from uuid import UUID
 import uuid
@@ -10,6 +10,7 @@ import urllib.request
 import urllib.error
 import json
 from typing import Optional, List
+from datetime import datetime, timezone
 
 from app.database.connection import get_db, SessionLocal
 from app.config.settings import settings
@@ -18,9 +19,10 @@ from app.schemas.tenant_schema import (
     SystemPromptRequest, SystemPromptResponse, TwilioLimitsRequest, VectorStatusOut,
     WalletRechargeRequest, WalletOut
 )
-from app.controllers import tenant_controller, auth_controller
+from app.controllers import tenant_controller, auth_controller, user_controller
 from app.models.user_model import User, UserRole
 from app.models.document import Document
+from app.models.tenant import Tenant, TenantVerificationStatus
 
 router = APIRouter(prefix="/tenant", tags=["Tenant"])
 
@@ -361,14 +363,18 @@ def get_wallet_balance(
     db: Session = Depends(get_db),
     current_user: User = Depends(auth_controller.get_current_user)
 ):
-    """Retrieve the current wallet balance for the tenant."""
+    """Retrieve the current wallet balance for the tenant (or master wallet for Super Admin)."""
     if not current_user.tenant_id:
+        if current_user.role == UserRole.SUPER_ADMIN:
+            return {"id": uuid.uuid4(), "tenant_id": uuid.uuid4(), "balance": 99999900, "currency": "INR"}
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="User is not associated with any tenant."
         )
     wallet = db.query(Wallet).filter(Wallet.tenant_id == current_user.tenant_id).first()
     if not wallet:
+        if current_user.role == UserRole.SUPER_ADMIN:
+            return {"id": uuid.uuid4(), "tenant_id": current_user.tenant_id or uuid.uuid4(), "balance": 99999900, "currency": "INR"}
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Wallet not found for this tenant."
@@ -379,9 +385,9 @@ def get_wallet_balance(
 def recharge_wallet(
     request_in: WalletRechargeRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(auth_controller.require_role([UserRole.BUSINESS_OWNER, UserRole.SUPER_ADMIN]))
+    current_user: User = Depends(auth_controller.require_approved_company)
 ):
-    """Recharge tenant wallet (mocked for development/testing)."""
+    """Recharge tenant wallet (mocked for development/testing). Requires APPROVED company."""
     if not current_user.tenant_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -397,4 +403,300 @@ def recharge_wallet(
     db.commit()
     db.refresh(wallet)
     return wallet
+
+# ---------------------------------------------------------
+# COMPANY VERIFICATION & ACCESS CONTROL ENDPOINTS
+# ---------------------------------------------------------
+from fastapi import Form
+from app.schemas.company_verification_schema import CompanyVerificationStatusOut
+from app.services.company_verification_service import (
+    normalize_country, validate_file, save_verification_document,
+    save_onboarding_verification_document,
+    create_audit_entry, invalidate_redis_verification_cache,
+    DOC_TYPE_GST, DOC_TYPE_INCORPORATION, DOC_TYPE_COMPANIES_HOUSE
+)
+from app.models.tenant import TenantVerificationStatus
+from app.models.user_model import BlacklistedToken
+from app.utils.helpers import decode_access_token, create_access_token
+from datetime import timedelta
+
+def get_current_user_or_onboarding(
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+) -> dict:
+    """Dependency supporting both logged-in User tokens and onboarding verified_tokens."""
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    if not authorization or not authorization.startswith("Bearer "):
+        raise credentials_exception
+
+    token = authorization.split(" ")[1]
+
+    # Check blacklist
+    is_blacklisted = db.query(BlacklistedToken).filter(BlacklistedToken.token == token).first()
+    if is_blacklisted:
+        raise credentials_exception
+
+    payload = decode_access_token(token)
+    if not payload:
+        raise credentials_exception
+
+    username = payload.get("sub")
+    if username:
+        user = user_controller.get_user_by_username(db, username)
+        if user:
+            return {"user": user, "payload": payload, "token": token, "is_onboarding": False}
+
+    # Check if onboarding token (has otp_verified)
+    if payload.get("otp_verified"):
+        return {"user": None, "payload": payload, "token": token, "is_onboarding": True}
+
+    raise credentials_exception
+
+@router.get("/company-verification/status", response_model=CompanyVerificationStatusOut)
+def get_company_verification_status(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(auth_controller.get_current_user)
+):
+    """Retrieve company verification status for frontend access control."""
+    if not current_user.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User is not associated with any tenant workspace."
+        )
+
+    tenant = tenant_controller.get_tenant_by_id(db, current_user.tenant_id)
+    if not tenant:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tenant workspace not found."
+        )
+
+    return CompanyVerificationStatusOut(
+        status=tenant.verification_status.value if hasattr(tenant.verification_status, "value") else str(tenant.verification_status),
+        country=tenant.country,
+        company_name=tenant.company_name,
+        company_email=tenant.company_email,
+        phone_number=tenant.company_phone,
+        owner_name=tenant.owner_name,
+        registered_office_address=tenant.registered_address,
+        company_number=tenant.company_number,
+        submitted_at=tenant.submitted_at,
+        rejection_reason=tenant.rejection_reason,
+        verified_at=tenant.verified_at,
+        verification_doc_url=tenant.verification_doc_url
+    )
+
+@router.post("/company-verification", response_model=CompanyVerificationStatusOut)
+def submit_company_verification(
+    country: str = Form("INDIA"),
+    company_name: str = Form(...),
+    company_email: str = Form(...),
+    phone_number: str = Form(...),
+    owner_name: str = Form(...),
+    registered_office_address: str = Form(...),
+    company_number: Optional[str] = Form(None),
+    gst_doc: Optional[UploadFile] = File(None),
+    incorporation_doc: Optional[UploadFile] = File(None),
+    companies_house_doc: Optional[UploadFile] = File(None),
+    verification_doc: Optional[UploadFile] = File(None),
+    documents: Optional[List[UploadFile]] = File(None),
+    db: Session = Depends(get_db),
+    auth_ctx: dict = Depends(get_current_user_or_onboarding)
+):
+    """
+    Submit or Resubmit Company Verification details and documents.
+    Supports both logged-in workspace Users and onboarding pre-registration sessions.
+    """
+    is_onboarding = auth_ctx["is_onboarding"]
+    current_user = auth_ctx["user"]
+    payload = auth_ctx["payload"]
+
+    # Normalize & Validate Country
+    norm_country = normalize_country(country)
+
+    # Validate Common Required Text Fields
+    if not company_name or not company_name.strip():
+        raise HTTPException(status_code=400, detail="company_name is required.")
+    if not company_email or not company_email.strip():
+        raise HTTPException(status_code=400, detail="company_email is required.")
+    if not phone_number or not phone_number.strip():
+        raise HTTPException(status_code=400, detail="phone_number is required.")
+    if not owner_name or not owner_name.strip():
+        raise HTTPException(status_code=400, detail="owner_name is required.")
+    if not registered_office_address or not registered_office_address.strip():
+        raise HTTPException(status_code=400, detail="registered_office_address is required.")
+
+    # Country Specific Validation
+    if norm_country == "INDIA":
+        has_gst = gst_doc is not None
+        has_inc = incorporation_doc is not None or verification_doc is not None or (documents and len(documents) > 0)
+
+        if not (has_gst or has_inc):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="India company verification requires at least one document: GST Registration Certificate OR Certificate of Incorporation."
+            )
+
+    elif norm_country == "UNITED_KINGDOM":
+        if not company_number or not company_number.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Companies House Company Number ('company_number') is required for United Kingdom companies."
+            )
+
+        has_uk_cert = companies_house_doc is not None or incorporation_doc is not None or verification_doc is not None or (documents and len(documents) > 0)
+        if not has_uk_cert:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="United Kingdom company verification requires a Companies House Certificate of Incorporation."
+            )
+
+    # Collect files to process
+    files_to_process = []
+    if norm_country == "INDIA":
+        if gst_doc: files_to_process.append((gst_doc, DOC_TYPE_GST))
+        if incorporation_doc: files_to_process.append((incorporation_doc, DOC_TYPE_INCORPORATION))
+        if verification_doc: files_to_process.append((verification_doc, DOC_TYPE_INCORPORATION))
+        if documents:
+            for doc in documents: files_to_process.append((doc, DOC_TYPE_INCORPORATION))
+    elif norm_country == "UNITED_KINGDOM":
+        if companies_house_doc: files_to_process.append((companies_house_doc, DOC_TYPE_COMPANIES_HOUSE))
+        if incorporation_doc: files_to_process.append((incorporation_doc, DOC_TYPE_COMPANIES_HOUSE))
+        if verification_doc: files_to_process.append((verification_doc, DOC_TYPE_COMPANIES_HOUSE))
+        if documents:
+            for doc in documents: files_to_process.append((doc, DOC_TYPE_COMPANIES_HOUSE))
+
+    if is_onboarding:
+        # ONBOARDING FLOW
+        first_doc_url = None
+        for upload_file, doc_type in files_to_process:
+            content = upload_file.file.read()
+            validate_file(upload_file, content)
+            doc_url = save_onboarding_verification_document(
+                upload_file, content, doc_type, payload.get("tenant_id", "onboarding")
+            )
+            if not first_doc_url:
+                first_doc_url = doc_url
+
+        # Create updated onboarding token payload
+        verified_payload = payload.copy()
+        verified_payload["country"] = norm_country
+        verified_payload["company_name"] = company_name.strip()
+        verified_payload["company_email"] = company_email.strip()
+        verified_payload["company_phone"] = phone_number.strip()
+        verified_payload["phone_number"] = phone_number.strip()
+        verified_payload["owner_name"] = owner_name.strip()
+        verified_payload["registered_address"] = registered_office_address.strip()
+        verified_payload["registered_office_address"] = registered_office_address.strip()
+        verified_payload["company_number"] = company_number.strip() if company_number else None
+        if first_doc_url:
+            verified_payload["verification_doc_url"] = first_doc_url
+        verified_payload["verification_status"] = "PENDING"
+
+        new_verified_token = create_access_token(data=verified_payload, expires_delta=timedelta(minutes=30))
+
+        return CompanyVerificationStatusOut(
+            status="PENDING",
+            country=norm_country,
+            company_name=company_name.strip(),
+            company_email=company_email.strip(),
+            phone_number=phone_number.strip(),
+            owner_name=owner_name.strip(),
+            registered_office_address=registered_office_address.strip(),
+            company_number=company_number.strip() if company_number else None,
+            submitted_at=datetime.now(timezone.utc),
+            rejection_reason=None,
+            verified_at=None,
+            verification_doc_url=first_doc_url,
+            verified_token=new_verified_token
+        )
+
+    else:
+        # LOGGED IN USER FLOW
+        if not current_user.tenant_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="User is not associated with any tenant workspace."
+            )
+
+        tenant = db.query(Tenant).filter(Tenant.id == current_user.tenant_id).first()
+        if not tenant:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Tenant workspace not found."
+            )
+
+        # Prevent duplicate submission if already pending
+        if tenant.verification_status == TenantVerificationStatus.PENDING:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Company verification is already pending review. Duplicate submissions are not allowed while status is PENDING."
+            )
+
+        saved_docs = []
+        for upload_file, doc_type in files_to_process:
+            content = upload_file.file.read()
+            validate_file(upload_file, content)
+            doc_rec = save_verification_document(db, tenant, current_user, upload_file, content, doc_type)
+            saved_docs.append(doc_rec)
+
+        # Determine Previous & New Status
+        prev_status = tenant.verification_status.value if hasattr(tenant.verification_status, "value") else str(tenant.verification_status)
+        action_type = "RESUBMITTED" if prev_status == TenantVerificationStatus.REJECTED.value else "SUBMITTED"
+
+        # Update Tenant DB fields
+        tenant.country = norm_country
+        tenant.company_name = company_name.strip()
+        tenant.company_email = company_email.strip()
+        tenant.company_phone = phone_number.strip()
+        tenant.owner_name = owner_name.strip()
+        tenant.registered_address = registered_office_address.strip()
+        tenant.company_number = company_number.strip() if company_number else None
+
+        if saved_docs:
+            tenant.verification_doc_url = saved_docs[0].file_url
+
+        now_utc = datetime.now(timezone.utc)
+        tenant.verification_status = TenantVerificationStatus.PENDING
+        tenant.submitted_at = now_utc
+        tenant.rejection_reason = None
+
+        # Log Audit Entry
+        create_audit_entry(
+            db=db,
+            tenant_id=tenant.id,
+            action=f"VERIFICATION_{action_type}",
+            performed_by=current_user.id,
+            previous_status=prev_status,
+            new_status=TenantVerificationStatus.PENDING.value,
+            rejection_reason=None,
+            meta_data={"documents_uploaded": len(saved_docs)}
+        )
+
+        db.commit()
+        db.refresh(tenant)
+
+        # Redis Cache Update
+        invalidate_redis_verification_cache(tenant.id)
+
+        return CompanyVerificationStatusOut(
+            status=tenant.verification_status.value if hasattr(tenant.verification_status, "value") else str(tenant.verification_status),
+            country=tenant.country,
+            company_name=tenant.company_name,
+            company_email=tenant.company_email,
+            phone_number=tenant.company_phone,
+            owner_name=tenant.owner_name,
+            registered_office_address=tenant.registered_address,
+            company_number=tenant.company_number,
+            submitted_at=tenant.submitted_at,
+            rejection_reason=tenant.rejection_reason,
+            verified_at=tenant.verified_at,
+            verification_doc_url=tenant.verification_doc_url
+        )
+
+
 

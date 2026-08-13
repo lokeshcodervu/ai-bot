@@ -111,10 +111,32 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
       if (res.ok) {
         const data = await res.json();
         setToken(data.access_token);
-        setUser(data.user);
+        if (data.user) {
+          setUser(data.user);
+        }
         if (data.tenant) {
           setTenant(data.tenant);
         }
+
+        // Fetch latest profile from /auth/me to ensure user role and tenant state are fresh
+        try {
+          const meRes = await fetch(`${API_BASE}/auth/me`, {
+            headers: {
+              'Authorization': `Bearer ${data.access_token}`,
+              'ngrok-skip-browser-warning': 'true',
+            },
+          });
+          if (meRes.ok) {
+            const meData = await meRes.json();
+            setUser(meData);
+            if (meData.tenant) {
+              setTenant(meData.tenant);
+            }
+          }
+        } catch (meErr) {
+          console.error("Failed to fetch user profile:", meErr);
+        }
+
         if (onClose) onClose();
         router.push('/dashboard');
       } else {
@@ -269,18 +291,29 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
     try {
       const activeToken = verifiedToken || (typeof window !== 'undefined' ? localStorage.getItem('token') : '');
       const formData = new FormData();
-      formData.append('country', country);
+      formData.append('country', country.toUpperCase() === 'UNITED KINGDOM' ? 'UNITED_KINGDOM' : country);
       formData.append('company_name', companyName.trim());
       formData.append('company_email', companyEmail.trim() || email.trim());
+      formData.append('phone_number', companyPhone.trim());
       formData.append('company_phone', companyPhone.trim());
       formData.append('owner_name', ownerName.trim() || fullName.trim());
+      formData.append('registered_office_address', registeredAddress.trim());
       formData.append('registered_address', registeredAddress.trim());
-      if (country === 'United Kingdom') {
+      if (companyNumber.trim()) {
         formData.append('company_number', companyNumber.trim());
       }
-      formData.append('verification_doc', verificationDoc);
 
-      const res = await fetch(`${API_BASE}/onboarding/upload-company-doc`, {
+      if (verificationDoc) {
+        formData.append('verification_doc', verificationDoc);
+        if (country === 'India') {
+          formData.append('gst_doc', verificationDoc);
+          formData.append('incorporation_doc', verificationDoc);
+        } else {
+          formData.append('companies_house_doc', verificationDoc);
+        }
+      }
+
+      const res = await fetch(`${API_BASE}/tenant/company-verification`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${activeToken}`,
@@ -291,23 +324,61 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
 
       if (res.ok) {
         const data = await res.json();
-        setTenant({
-          id: data.tenant_id,
-          companyName: companyName,
-          country: country,
-          companyEmail: companyEmail || email,
-          companyPhone: companyPhone,
-          companyNumber: companyNumber,
-          registeredAddress: registeredAddress,
-          ownerName: ownerName || fullName,
-          verificationStatus: 'PENDING',
-          verificationDocUrl: data.verification_doc_url,
-        });
-        if (onClose) onClose();
-        router.push('/dashboard');
+        const activeVerifiedToken = data.verified_token || verifiedToken;
+        if (data.verified_token) {
+          setVerifiedToken(data.verified_token);
+        }
+
+        if (step === 2) {
+          // Complete onboarding automatically and redirect directly to dashboard
+          const completeRes = await fetch(`${API_BASE}/onboarding/complete`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'ngrok-skip-browser-warning': 'true',
+            },
+            body: JSON.stringify({
+              verified_token: activeVerifiedToken,
+              plan: selectedPlan || 'pro',
+              payment_method: 'card',
+              card_number: '4242424242424242',
+              card_cvc: '123',
+            }),
+          });
+
+          if (completeRes.ok) {
+            const completeData = await completeRes.json();
+            setToken(completeData.access_token);
+            if (completeData.user) setUser(completeData.user);
+            if (completeData.tenant) setTenant(completeData.tenant);
+
+            if (onClose) onClose();
+            router.push('/dashboard');
+            return;
+          } else {
+            const err = await completeRes.json();
+            alert(`Account creation failed: ${err.detail || 'Could not complete registration'}`);
+            return;
+          }
+        } else {
+          setTenant({
+            id: data.tenant_id,
+            companyName: companyName,
+            country: country,
+            companyEmail: companyEmail || email,
+            companyPhone: companyPhone,
+            companyNumber: companyNumber,
+            registeredAddress: registeredAddress,
+            ownerName: ownerName || fullName,
+            verificationStatus: 'PENDING',
+            verificationDocUrl: data.verification_doc_url || '',
+          });
+          if (onClose) onClose();
+          router.push('/dashboard');
+        }
       } else {
         const err = await res.json();
-        alert(`Upload failed: ${err.detail || 'Could not upload company document'}`);
+        alert(`Verification submission failed: ${err.detail || 'Could not submit company verification'}`);
       }
     } catch (err) {
       console.error(err);
@@ -453,14 +524,19 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
   };
 
   return (
-    <div className="relative w-full min-h-screen bg-[#060607] text-white flex flex-col justify-between p-6 md:p-12 font-sans overflow-hidden selection:bg-emerald-500 selection:text-black">
+    <div className="relative w-full min-h-screen bg-[#060607] text-white flex flex-col justify-between p-4 sm:p-6 md:p-12 font-sans overflow-hidden selection:bg-emerald-500 selection:text-black">
 
-      {/* Full Page Canvas Background Image */}
-      <div
-        className="absolute inset-0 w-full h-full bg-cover bg-right bg-no-repeat z-0 pointer-events-none"
-        style={{ backgroundImage: "url('/login.png')" }}
-      />
-      <div className="absolute inset-0 bg-gradient-to-r from-[#060607]/90 via-[#060607]/40 to-transparent z-0 pointer-events-none" />
+      {/* Full Page Canvas Background Video (ab.mp4) */}
+      <video
+        autoPlay
+        loop
+        muted
+        playsInline
+        className="absolute inset-0 w-full h-full object-cover z-0 pointer-events-none"
+      >
+        <source src="/video/ab.mp4" type="video/mp4" />
+      </video>
+      <div className="absolute inset-0 bg-gradient-to-b md:bg-gradient-to-r from-[#060607]/90 via-[#060607]/60 to-transparent z-0 pointer-events-none" />
 
       {/* Top Header Row */}
       <div className="w-full max-w-7xl mx-auto flex items-center justify-end mb-6 z-10 min-h-[40px]">
@@ -474,11 +550,11 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
         )}
       </div>
 
-      {/* Main Content Area Overlaid on Background */}
-      <div className="w-full max-w-7xl mx-auto flex-1 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center z-10 py-4">
+      {/* Main Content Area Overlaid on Background (Centered Form Card) */}
+      <div className="w-full max-w-7xl mx-auto flex-1 flex items-center justify-center z-10 py-4">
 
-        {/* Left Side Form Column positioned over dark left space of background */}
-        <div className="lg:col-span-6 xl:col-span-5 flex flex-col justify-center">
+        {/* Centered Form Container */}
+        <div className="w-full max-w-[500px] flex flex-col justify-center bg-[#060607]/80 backdrop-blur-xl border border-white/10 rounded-2xl p-6 sm:p-8 shadow-2xl">
 
           {/* ========================================================================= */}
           {/* VIEW: SIGN UP */}

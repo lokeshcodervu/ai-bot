@@ -13,7 +13,8 @@ from sqlalchemy import (
     BigInteger,
     JSON,
     Numeric,
-    Index
+    Index,
+    ForeignKey
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
@@ -66,6 +67,9 @@ class Tenant(Base):
     verification_status = Column(Enum(TenantVerificationStatus), default=TenantVerificationStatus.PENDING, nullable=False)
     verification_doc_url = Column(Text, nullable=True)
     rejection_reason = Column(Text, nullable=True)
+    submitted_at = Column(DateTime(timezone=True), nullable=True)
+    verified_at = Column(DateTime(timezone=True), nullable=True)
+    verified_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     allowed_modules = Column(JSON, default=lambda: ["campaigns", "leads", "live_monitor", "analytics", "rag", "settings"])
 
     # AI CONFIGURATION
@@ -113,7 +117,8 @@ class Tenant(Base):
     last_activity_at = Column(DateTime(timezone=True))
 
     # RELATIONSHIPS
-    users = relationship("User", back_populates="tenant", cascade="all, delete-orphan", lazy="selectin")
+    users = relationship("User", back_populates="tenant", foreign_keys="User.tenant_id", cascade="all, delete-orphan", lazy="selectin")
+    verified_by_user = relationship("User", foreign_keys=[verified_by], lazy="selectin")
     subscription = relationship("Subscription", back_populates="tenant", uselist=False, cascade="all, delete-orphan")
     payments = relationship("Payment", back_populates="tenant", cascade="all, delete-orphan")
     usage = relationship("TenantUsage", back_populates="tenant", uselist=False, cascade="all, delete-orphan")

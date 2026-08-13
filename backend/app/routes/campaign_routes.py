@@ -8,7 +8,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.database.connection import get_db
 from app.controllers import auth_controller, campaign_controller
-from app.models.user_model import User
+from app.models.user_model import User, UserRole
 from app.models.campaign import CampaignStatus, Campaign
 from app.models.wallet import Wallet
 from app.schemas.campaign_schema import (
@@ -23,15 +23,26 @@ router = APIRouter(prefix="/campaigns", tags=["Campaigns"])
 def create_campaign_endpoint(
     request_in: CampaignCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_payment)
+    current_user: User = Depends(auth_controller.require_approved_company)
 ):
-    """Create a new campaign for a paid tenant workspace."""
+    """Create a new campaign for a paid and approved tenant workspace."""
     tenant_id = current_user.tenant_id
     if not tenant_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User is not associated with any tenant workspace."
-        )
+        if current_user.role == UserRole.SUPER_ADMIN:
+            from app.models.tenant import Tenant
+            first_tenant = db.query(Tenant).first()
+            if first_tenant:
+                tenant_id = first_tenant.id
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="No tenant workspace available in system to create campaign for."
+                )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="User is not associated with any tenant workspace."
+            )
     return campaign_controller.create_campaign(db, tenant_id, request_in)
 
 @router.get("", response_model=List[CampaignOut])
@@ -39,9 +50,12 @@ def get_campaigns_endpoint(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_payment)
 ):
-    """Retrieve all campaigns for the tenant workspace."""
+    """Retrieve all campaigns for the tenant workspace (or all campaigns for Super Admin)."""
     tenant_id = current_user.tenant_id
     if not tenant_id:
+        if current_user.role == UserRole.SUPER_ADMIN:
+            from app.models.campaign import Campaign
+            return db.query(Campaign).all()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="User is not associated with any tenant workspace."
@@ -56,7 +70,7 @@ def get_campaigns_endpoint(
 def add_to_blacklist_endpoint(
     request_in: BlacklistAdd,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_payment)
+    current_user: User = Depends(auth_controller.require_approved_company)
 ):
     """Add a phone number to DND / opt-out blacklist repository."""
     tenant_id = current_user.tenant_id
@@ -111,7 +125,7 @@ def assign_leads_endpoint(
     campaign_id: UUID,
     request_in: CampaignAssignLeads,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_payment)
+    current_user: User = Depends(auth_controller.require_approved_company)
 ):
     """Link a list of leads to a campaign. Resets their calling parameters to PENDING_QUEUE."""
     tenant_id = current_user.tenant_id
@@ -138,7 +152,7 @@ def launch_campaign_endpoint(
     campaign_id: UUID,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_payment)
+    current_user: User = Depends(auth_controller.require_approved_company)
 ):
     """
     Launch campaign dialer.
@@ -190,7 +204,7 @@ def launch_campaign_endpoint(
 def suspend_campaign_endpoint(
     campaign_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_payment)
+    current_user: User = Depends(auth_controller.require_approved_company)
 ):
     """Manually pause/suspend the campaign dialer execution."""
     tenant_id = current_user.tenant_id
