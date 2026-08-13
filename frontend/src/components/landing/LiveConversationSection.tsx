@@ -55,7 +55,7 @@ export const LiveConversationSection: React.FC = () => {
           {/* Left Title: 555px */}
           <div className="w-full lg:max-w-[555px]">
             <h2 className="font-outfit font-normal text-3xl sm:text-4xl lg:text-[52px] leading-[1.15] lg:leading-[62px] tracking-[-0.02em] text-white">
-              Know what your agents are saying - while they're saying it.
+              Know what your agents are saying - while they&apos;re saying it.
             </h2>
           </div>
 
